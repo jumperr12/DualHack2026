@@ -24,10 +24,17 @@ def test_parse_location_docs_example():
     assert 4.5e6 < p.x < 5.5e6 and 3.8e6 < p.y < 4.5e6
 
 
-@pytest.mark.parametrize("field,value", [("sog", 102.3), ("cog", 360), ("heading", 511)])
+@pytest.mark.parametrize("field,value", [("sog", 102.3), ("sog", 1023), ("cog", 360), ("cog", 3600),
+                                         ("heading", 511), ("rot", -128), ("rot", 128)])
 def test_not_available_values_become_none(field, value):
     p = parse_location(1, {**LOCATION, field: value}, BBOX)
     assert getattr(p, field) is None
+
+
+def test_rot_kept_when_available():
+    assert parse_location(1, {**LOCATION, "rot": -12}, BBOX).rot == -12
+    assert parse_location(1, {**LOCATION, "rot": 127}, BBOX).rot == 127
+    assert parse_location(1, LOCATION, BBOX).rot == 0
 
 
 @pytest.mark.parametrize("lat,lon", [(91, 181), (40.0, 20.0), (60.0, 5.0)])

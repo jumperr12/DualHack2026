@@ -12,6 +12,7 @@ class Ping:
     sog: float | None
     cog: float | None
     heading: float | None
+    rot: float | None       # surowa wartość AIS (-127..127), NULL gdy niedostępna
     nav_stat: int | None
     is_replay: int = 0
 

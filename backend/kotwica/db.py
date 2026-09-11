@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS vessels(
 
 CREATE TABLE IF NOT EXISTS positions(
     mmsi INTEGER, ts INTEGER, lat REAL, lon REAL, x REAL, y REAL,
-    sog REAL, cog REAL, heading REAL, nav_stat INTEGER, is_replay INTEGER DEFAULT 0);
+    sog REAL, cog REAL, heading REAL, rot REAL, nav_stat INTEGER, is_replay INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_positions_mmsi_ts ON positions(mmsi, ts);
 CREATE INDEX IF NOT EXISTS idx_positions_ts ON positions(ts);
 
@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS reports(
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 
+# Kolumny dodane po pierwszym wdrożeniu: (tabela, kolumna, typ). CREATE IF NOT EXISTS ich nie doda
+# do istniejącej bazy, więc dokładamy je przez ALTER TABLE.
+MIGRATIONS = [
+    ("positions", "rot", "REAL"),
+]
+
 
 def connect(path: str, readonly: bool = False) -> sqlite3.Connection:
     if readonly:
@@ -61,6 +67,10 @@ def connect(path: str, readonly: bool = False) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, ctype in MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ctype}")
     conn.commit()
 
 

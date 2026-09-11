@@ -9,13 +9,8 @@ class Settings(BaseSettings):
     # --- środowisko ---
     DB_PATH: str = "../data/kotwica.db"
     STATIC_DIR: str = "../data/static"
-    FRONTEND_ORIGIN: str = ""
+    FRONTEND_ORIGIN: str = "http://localhost:5173"   # vite dev; po vite build front serwuje API
     ADMIN_TOKEN: str = ""
-    LLM_BASE_URL: str = ""
-    LLM_API_KEY: str = ""
-    LLM_MODEL: str = ""
-    AISSTREAM_KEY: str = ""
-    GFW_TOKEN: str = ""
     REPLAY_SPEED: float = 60
 
     # --- obszar: bbox Bałtyku (min_lon, min_lat, max_lon, max_lat) ---
@@ -33,6 +28,9 @@ class Settings(BaseSettings):
     RETENTION_CHECK_S: int = 3600   # jak często sprzątać
 
     # --- usuwanie czystych rejsów (statek zacumowany, bez alertu) ---
+    # Domyślnie WYŁĄCZONE: tryb do tyłu (forensyka) potrzebuje śladów wszystkich jednostek,
+    # także tych, które już weszły do portu. Zostaje tylko twarda retencja RETENTION_DAYS.
+    CLEAN_VOYAGES: bool = False
     PORT_SOG_MAX: float = 0.5       # węzły
     PORT_NAV_STATS: tuple[int, ...] = (5,)  # 5 = zacumowany; 1 (na kotwicy) celowo NIE
     PORT_STATIONARY_MIN: int = 30

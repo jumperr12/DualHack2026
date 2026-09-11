@@ -4,7 +4,7 @@ from kotwica.config import Settings
 from kotwica.models import Ping
 from workers.ais_ingest import VoyageTracker, apply_retention
 
-S = Settings()
+S = Settings(CLEAN_VOYAGES=True)   # testy mechanizmu; domyślnie jest wyłączony
 T0 = 1_700_000_000
 H = 3600
 MMSI = 230000001
@@ -12,7 +12,7 @@ MMSI = 230000001
 
 def ping(ts, sog, nav_stat, mmsi=MMSI):
     return Ping(mmsi=mmsi, ts=ts, lat=60.0, lon=25.0, x=0.0, y=0.0, sog=sog, cog=None,
-                heading=None, nav_stat=nav_stat)
+                heading=None, rot=None, nav_stat=nav_stat)
 
 
 def run_voyage(conn, dock_minutes, nav_stat_in_port=5, mmsi=MMSI):
@@ -45,6 +45,14 @@ def test_clean_voyage_deleted_after_grace(conn):
     assert clean == 181
     assert count(conn) == before - 181
     assert tracker.voyage_end == {}
+
+
+def test_clean_voyages_disabled_by_default(conn):
+    tracker, dock_start = run_voyage(conn, dock_minutes=30)
+    before = count(conn)
+    assert Settings().CLEAN_VOYAGES is False
+    assert apply_retention(conn, tracker, dock_start + 25 * H, Settings()) == (0, 0)
+    assert count(conn) == before
 
 
 def test_voyage_with_alert_kept(conn):

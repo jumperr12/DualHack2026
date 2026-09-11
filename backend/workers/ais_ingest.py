@@ -23,10 +23,12 @@ from kotwica.models import Ping, VesselMeta
 
 log = logging.getLogger("ais_ingest")
 
-# Wartości AIS oznaczające „niedostępne”
+# Wartości AIS oznaczające „niedostępne”. Digitraffic podaje sog/cog już zdekodowane (102.3 / 360),
+# ale progi >= łapią też surowe kodowanie (1023 / 3600), gdyby kiedyś przyszło.
 NA_SOG = 102.3
 NA_COG = 360.0
 NA_HEADING = 511
+NA_ROT = {-128, 128}   # -128 to standard AIS; 128 na wypadek, gdyby źródło podawało bez znaku
 
 SUMMARY_EVERY_S = 60
 
@@ -44,13 +46,14 @@ def parse_location(mmsi: int, p: dict, bbox) -> Ping | None:
         return None
     if abs(lat) > 90 or abs(lon) > 180 or not in_bbox(lon, lat, bbox):
         return None
-    sog, cog, heading = p.get("sog"), p.get("cog"), p.get("heading")
+    sog, cog, heading, rot = p.get("sog"), p.get("cog"), p.get("heading"), p.get("rot")
     x, y = to_3035(lon, lat)
     return Ping(
         mmsi=mmsi, ts=int(ts), lat=lat, lon=lon, x=x, y=y,
         sog=None if sog is None or sog >= NA_SOG else sog,
         cog=None if cog is None or cog >= NA_COG else cog,
         heading=None if heading is None or heading >= NA_HEADING or heading >= 360 else heading,
+        rot=None if rot is None or rot in NA_ROT else rot,
         nav_stat=p.get("navStat"),
     )
 
@@ -138,8 +141,11 @@ def apply_retention(conn, tracker: VoyageTracker, now: int, s: Settings) -> tupl
     """
     hard = conn.execute("DELETE FROM positions WHERE ts < ?",
                         (now - s.RETENTION_DAYS * 86400,)).rowcount
-    alerted = {row[0] for row in conn.execute("SELECT DISTINCT mmsi FROM alerts")}
     clean = 0
+    if not s.CLEAN_VOYAGES:
+        conn.commit()
+        return hard, clean
+    alerted = {row[0] for row in conn.execute("SELECT DISTINCT mmsi FROM alerts")}
     for mmsi, end in tracker.due(now - s.CLEAN_GRACE_H * 3600):
         if mmsi not in alerted:
             clean += conn.execute(
@@ -192,9 +198,9 @@ class Ingest:
             return
         with self.conn:
             self.conn.executemany(
-                "INSERT INTO positions(mmsi, ts, lat, lon, x, y, sog, cog, heading, nav_stat, is_replay) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [(p.mmsi, p.ts, p.lat, p.lon, p.x, p.y, p.sog, p.cog, p.heading, p.nav_stat,
+                "INSERT INTO positions(mmsi, ts, lat, lon, x, y, sog, cog, heading, rot, nav_stat, is_replay) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(p.mmsi, p.ts, p.lat, p.lon, p.x, p.y, p.sog, p.cog, p.heading, p.rot, p.nav_stat,
                   p.is_replay) for p in self.pings])
             self.conn.executemany(
                 "INSERT INTO vessels(mmsi, name, ship_type, imo, call_sign, destination, draught, updated_at) "

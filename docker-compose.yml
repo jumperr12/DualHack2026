@@ -14,26 +14,12 @@ services:
     <<: *backend
     command: python -m workers.ais_ingest
 
-  # detector (M1), sat-worker z mem_limit: 3g (M3) dojdą tutaj
+  # detector (M1) dojdzie tutaj: command: python -m workers.detector
 
   api:
     <<: *backend
     command: uvicorn kotwica.api.main:app --host 0.0.0.0 --port 8000
-    expose: ["8000"]
-
-  caddy:
-    image: caddy:2
-    restart: always
-    ports: ["80:80", "443:443"]
-    environment:
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [api]
+    ports: ["127.0.0.1:8000:8000"]
 
 volumes:
   data:
-  caddy_data:
-  caddy_config:

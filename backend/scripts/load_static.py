@@ -24,8 +24,11 @@ from kotwica.log import setup_logging
 
 log = logging.getLogger("load_static")
 
-LAYERS = ("cables", "pipelines", "windfarms")
+LAYERS = ("cables", "pipelines", "windfarms", "exclusions")
 SIMPLIFY_M = 50
+# Wyłączenia z OSM bywają punktami (port jako węzeł) albo liniami (nabrzeże). Detektor potrzebuje
+# poligonów, więc buforujemy je w metrach. Poligony zostają bez zmian.
+EXCLUSION_BUFFER_M = {"harbour": 2000, "anchorage": 1000}
 NAME_KEYS = ("name", "cable_name", "cablename", "name_cable", "pipe_name", "pipename",
              "pipeline", "sitename", "site_name", "project", "title", "label", "nazwa")
 
@@ -38,6 +41,8 @@ def layer_from_filename(path: Path) -> str | None:
         return "pipelines"
     if "wind" in n or "farm" in n:
         return "windfarms"
+    if any(k in n for k in ("exclu", "anchor", "port", "harbour", "kotwicowisk")):
+        return "exclusions"
     return None
 
 
@@ -84,17 +89,23 @@ def _maybe_swap_axes(geoms: list, bbox) -> list:
     return geoms
 
 
-def simplify_m(geom, tolerance_m: float):
-    def fwd(c):
-        x, y = to_3035_many(c[:, 0], c[:, 1])
-        return np.column_stack([x, y])
+def _fwd(c):
+    x, y = to_3035_many(c[:, 0], c[:, 1])
+    return np.column_stack([x, y])
 
-    def back(c):
-        lon, lat = to_4326_many(c[:, 0], c[:, 1])
-        return np.column_stack([lon, lat])
 
-    g = shapely.transform(geom, fwd).simplify(tolerance_m, preserve_topology=True)
-    return shapely.transform(g, back)
+def _back(c):
+    lon, lat = to_4326_many(c[:, 0], c[:, 1])
+    return np.column_stack([lon, lat])
+
+
+def simplify_m(geom, tolerance_m: float, buffer_m: float = 0):
+    """Uproszczenie (i opcjonalny bufor) w EPSG:3035, wynik z powrotem w WGS84."""
+    g = shapely.transform(geom, _fwd)
+    if buffer_m > 0:
+        g = g.buffer(buffer_m, quad_segs=4)
+    g = g.simplify(tolerance_m, preserve_topology=True)
+    return shapely.transform(g, _back)
 
 
 def process_features(fc: dict, layer: str, bbox, kind: str | None = None) -> list[dict]:
@@ -112,18 +123,23 @@ def process_features(fc: dict, layer: str, bbox, kind: str | None = None) -> lis
         g = g.intersection(clip)
         if g.is_empty:
             continue
-        g = simplify_m(g, SIMPLIFY_M)
+        props = f.get("properties") or {}
+        feat_kind = kind or props.get("kind")
+        buffer_m = 0
+        if layer == "exclusions" and g.geom_type not in ("Polygon", "MultiPolygon"):
+            buffer_m = EXCLUSION_BUFFER_M.get(feat_kind or "harbour", EXCLUSION_BUFFER_M["harbour"])
+        g = simplify_m(g, SIMPLIFY_M, buffer_m)
         if g.is_empty:
             continue
         g = shapely.set_precision(g, 1e-5)   # ~1 m, mniejsze pliki
-        props = f.get("properties") or {}
         name = pick_name(props)
         if name is None:
             name = f"{layer}-{len(out) + 1}"
-            log.info("no name attribute, using %s (keys: %s)", name, sorted(props)[:10])
+            if layer != "exclusions":
+                log.info("no name attribute, using %s (keys: %s)", name, sorted(props)[:10])
         p = {"name": name, "layer": layer}
-        if kind:
-            p["kind"] = kind
+        if feat_kind:
+            p["kind"] = feat_kind
         out.append({"type": "Feature", "properties": p, "geometry": mapping(g)})
     return out
 
