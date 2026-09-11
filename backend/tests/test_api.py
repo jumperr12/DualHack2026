@@ -1,20 +1,68 @@
+import json
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from kotwica import db
 from kotwica.config import settings
 
 
-def test_health_reports_ais_worker(tmp_path, monkeypatch):
+@pytest.fixture
+def client(tmp_path, monkeypatch):
     path = str(tmp_path / "k.db")
     c = db.connect(path)
     db.init_schema(c)
-    db.set_meta(c, "ais_last_write", int(time.time()) - 5)
+    now = int(time.time())
+    db.set_meta(c, "ais_last_write", now - 5)
+    c.executemany(
+        "INSERT INTO positions(mmsi, ts, lat, lon, x, y, sog, cog, heading, rot, nav_stat, is_replay) "
+        "VALUES (?, ?, ?, ?, 0, 0, ?, 90, 90, 0, 0, ?)",
+        [(1, now - 600, 60.0, 25.0, 10.0, 0), (1, now - 300, 60.0, 25.1, 11.0, 0),   # statek 1, 2 pingi
+         (2, now - 100, 59.0, 24.0, 0.0, 0),                                          # statek 2
+         (3, now - 7200, 60.5, 25.5, 5.0, 0),                                         # stary, poza oknem
+         (999000001, now - 50, 60.2, 25.2, 6.0, 1)])                                  # replay
+    c.execute("INSERT INTO vessels(mmsi, name, ship_type) VALUES (1, 'TEST', 70)")
+    c.execute("INSERT INTO vessel_state(mmsi, score, level) VALUES (1, 65, 'watch')")
     c.commit()
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "cables.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Estlink 2"},
+         "geometry": {"type": "LineString", "coordinates": [[25, 59.5], [25, 60.5]]}}]}))
     monkeypatch.setattr(settings, "DB_PATH", path)
+    monkeypatch.setattr(settings, "STATIC_DIR", str(static))
+    from kotwica.api import main
+    main._infrastructure.cache_clear()
+    return TestClient(main.app)
 
-    from kotwica.api.main import app
-    body = TestClient(app).get("/health").json()
-    assert body["ok"] is True
-    assert body["workers"]["ais-worker"]["age_s"] >= 5
+
+def test_health(client):
+    body = client.get("/health").json()
+    assert body["ok"] is True and body["workers"]["ais-worker"]["age_s"] >= 5
+    assert body["workers"]["detector"]["ok"] is False
+
+
+def test_infrastructure_merges_layers(client):
+    fc = client.get("/infrastructure").json()
+    assert [f["properties"]["layer"] for f in fc["features"]] == ["cables"]
+
+
+def test_vessels_latest_per_mmsi_with_state(client):
+    fc = client.get("/vessels").json()
+    by = {f["properties"]["mmsi"]: f for f in fc["features"]}
+    assert set(by) == {1, 2, 999000001}          # 3 jest za stary
+    assert by[1]["properties"]["sog"] == 11.0    # najnowszy ping
+    assert by[1]["properties"]["name"] == "TEST" and by[1]["properties"]["level"] == "watch"
+    assert by[2]["properties"]["level"] is None
+
+    fc = client.get("/vessels?bbox=24.5,59.5,25.5,60.5&replay=false").json()
+    assert [f["properties"]["mmsi"] for f in fc["features"]] == [1]
+    assert client.get("/vessels?bbox=nope").status_code == 400
+
+
+def test_track(client):
+    t = client.get("/vessels/1/track?hours=1").json()
+    assert t["geometry"]["coordinates"] == [[25.0, 60.0], [25.1, 60.0]]
+    assert t["properties"]["n"] == 2
+    assert client.get("/vessels/42/track").status_code == 404

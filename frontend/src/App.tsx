@@ -1,0 +1,53 @@
+import { useEffect, useState } from "react";
+import { getHealth, Health, VesselProps } from "./api";
+import MapView from "./components/MapView";
+
+const NAV_STAT: Record<number, string> = {
+  0: "under way", 1: "at anchor", 2: "not under command", 3: "restricted", 4: "constrained by draught",
+  5: "moored", 6: "aground", 7: "fishing", 8: "sailing", 15: "undefined",
+};
+
+export default function App() {
+  const [health, setHealth] = useState<Health | null>(null);
+  const [count, setCount] = useState(0);
+  const [selected, setSelected] = useState<VesselProps | null>(null);
+
+  useEffect(() => {
+    const tick = () => getHealth().then(setHealth).catch(() => setHealth(null));
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const ais = health?.workers["ais-worker"];
+  return (
+    <div className="app">
+      <header className="topbar">
+        <span className="brand">KOTWICA</span>
+        <span className="stat">vessels in view <b>{count}</b></span>
+        <span className="stat">AIS feed{" "}
+          {ais ? <b className={ais.ok ? "ok" : "bad"}>{ais.ok ? `live (${ais.age_s}s)` : "stale"}</b>
+               : <b className="bad">offline</b>}
+        </span>
+      </header>
+      <MapView onSelect={setSelected} onVesselCount={setCount} />
+      <aside className="side">
+        <h2>Vessel</h2>
+        {selected ? (
+          <dl>
+            <dt>MMSI</dt><dd>{selected.mmsi}{selected.is_replay ? " (replay)" : ""}</dd>
+            <dt>Name</dt><dd>{selected.name ?? "—"}</dd>
+            <dt>Type</dt><dd>{selected.ship_type ?? "—"}</dd>
+            <dt>SOG</dt><dd>{selected.sog ?? "—"} kn</dd>
+            <dt>COG / HDG</dt><dd>{selected.cog ?? "—"}° / {selected.heading ?? "—"}°</dd>
+            <dt>Status</dt><dd>{selected.nav_stat != null ? NAV_STAT[selected.nav_stat] ?? selected.nav_stat : "—"}</dd>
+            <dt>Last ping</dt><dd>{new Date(selected.ts * 1000).toISOString().slice(11, 19)} UTC</dd>
+            <dt>Score</dt><dd>{selected.score ?? "—"} {selected.level ?? ""}</dd>
+          </dl>
+        ) : <p className="empty">Click a vessel on the map.</p>}
+        <h2>Alerts</h2>
+        <p className="empty">Detector not running yet (M1).</p>
+      </aside>
+    </div>
+  );
+}

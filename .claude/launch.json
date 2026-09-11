@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-c", "import os; os.chdir('backend'); import uvicorn; uvicorn.run('kotwica.api.main:app', host='127.0.0.1', port=8000)"],
+      "port": 8000
+    }
+  ]
+}
