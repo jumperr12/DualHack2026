@@ -1,0 +1,30 @@
+# secrets
+.env
+
+# data: commit only static layers and scenarios
+data/*
+!data/static/
+!data/scenarios/
+data/static/raw/
+*.db
+*.db-wal
+*.db-shm
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+
+# node
+node_modules/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
