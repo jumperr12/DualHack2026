@@ -1,0 +1,39 @@
+x-backend: &backend
+  build: ./backend
+  image: kotwica-backend
+  env_file: .env
+  volumes:
+    - data:/data
+    - ./data/static:/app/data/static:ro
+  restart: always
+  logging:
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  ais-worker:
+    <<: *backend
+    command: python -m workers.ais_ingest
+
+  # detector (M1), sat-worker z mem_limit: 3g (M3) dojdą tutaj
+
+  api:
+    <<: *backend
+    command: uvicorn kotwica.api.main:app --host 0.0.0.0 --port 8000
+    expose: ["8000"]
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:
