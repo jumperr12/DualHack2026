@@ -106,15 +106,22 @@ kotwica/
 
 ### AIS na żywo — Digitraffic (Fintraffic), P0
 - MQTT over WebSocket, TLS: host `meri.digitraffic.fi`, port `443`, path `/mqtt`.
-- Tematy: `vessels-v2/+/location` oraz `vessels-v2/+/metadata`.
-  **Zweryfikuj nazwy tematów i pola w dokumentacji: https://digitraffic.fi/en/marine-traffic**
-- Pola lokalizacji (v2): `time`, `sog`, `cog`, `navStat`, `rot`, `posAcc`, `raim`, `heading`, `lon`, `lat`.
-- Pola metadanych: `name`, `shipType`, `imo`, `callSign`, `destination`, `draught`, `eta`.
+- Subskrybujemy `vessels-v2/#` i rozpoznajemy typ po ostatnim członie tematu
+  (dokumentacja podaje raz `location`, raz `locations`; `vessels-v2/status` ignorujemy).
+- Pola lokalizacji (v2): `time` (**sekundy**), `sog` (kn), `cog`, `navStat`, `rot`, `posAcc`, `raim`,
+  `heading`, `lon`, `lat`. „Niedostępne” → NULL: `sog` 102.3, `cog` 360, `heading` 511; lat 91 / lon 181 → ping odrzucony.
+- Pola metadanych (zweryfikowane): `timestamp` (**ms**), `name`, **`type`** (nie `shipType`), `imo`, `callSign`,
+  `destination`, `draught` (**dziesiąte części metra**, 68 = 6.8 m), `eta`. Zera (`imo`, `type`, `draught`) → NULL.
 - MMSI jest w temacie (`vessels-v2/<mmsi>/location`).
-- Ustaw nagłówek / client id identyfikujący aplikację (Digitraffic prosi o `Digitraffic-User`).
+- Client id: `"kotwica; <uuid4>"` + nagłówek WS `Digitraffic-User: kotwica`.
 - paho-mqtt v2: `mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")`,
   `tls_set()`, `ws_set_options(path="/mqtt")`, reconnect z backoffem.
 - Downsampling: max 1 ping na MMSI na 30 s. Zapis wsadowy co ~2 s. Retencja pozycji: 7 dni.
+- Usuwanie czystych rejsów: statek zacumowany (`navStat` 5 i `sog < 0.5`) przez ≥ 30 min kończy rejs.
+  Jeśli nie ma żadnego wiersza w `alerts`, jego pozycje do początku postoju są kasowane po `CLEAN_GRACE_H` (24 h).
+  Karencja chroni atrybucję plam (okno 6 h + opóźnienie sceny) i analizę wsteczną po awarii kabla.
+  Kotwiczenie (`navStat` 1) NIE kończy rejsu. Kasuje tylko `ais-worker` (jedyny pisarz `positions`).
+  Realnie ok. 700 pingów/min po downsamplingu (~1 mln/dobę).
 
 ### AIS alternatywny — AISstream.io, P2
 - `wss://stream.aisstream.io/v0/stream`, wiadomość subskrypcji z `APIKey` i `BoundingBoxes`.
