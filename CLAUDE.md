@@ -7,9 +7,10 @@
 
 System, który na żywo nasłuchuje ruchu statków (AIS), zna trasy kabli i rurociągów
 na Bałtyku i każdemu statkowi przy infrastrukturze liczy wynik podejrzliwości
-(wzorzec wleczenia kotwicy, znikanie z AIS przy kablu). Drugi moduł analizuje
-zdjęcia satelitarne (Sentinel-2) tylko w wybranych obszarach, wykrywa plamy ropy
-i przypisuje je do statków na podstawie trajektorii AIS. Operator nie pilnuje
+(wzorzec wleczenia kotwicy, znikanie z AIS przy kablu). Drugi moduł to satelity, tylko
+w wybranych obszarach: radar Sentinel-1 wykrywa statki i porównuje je z AIS (statek widoczny
+na radarze bez AIS przy kablu = „ciemny”), a Sentinel-2 wykrywa plamy ropy i przypisuje je
+do statków na podstawie trajektorii AIS. Operator nie pilnuje
 tysięcy statków, tylko dostaje kilka alertów z uzasadnieniem i raportem.
 
 Dual-use: cywilnie (operatorzy infrastruktury, ochrona środowiska, MSPiR/SAR),
@@ -29,10 +30,12 @@ obronnie (Marynarka Wojenna, Straż Graniczna, ochrona przed sabotażem kabli).
 
 - **P0 (musi działać):** ingest AIS → baza, strefy wokół kabli, detektor z regułami i testami,
   API, mapa z kablami i statkami, panel alertów z uzasadnieniem, replay scenariusza „Eagle S”, deploy.
-- **P1 (mocno chcemy):** moduł plam na Sentinel-2 (jedna dobrze przygotowana scena),
-  atrybucja plama → statek, raport LLM, licznik statystyk do pitchu.
-- **P2 (jeśli starczy czasu):** Sentinel-1 (radar), korekta dryfu wiatrowego (Open-Meteo),
-  detekcje SAR z Global Fishing Watch, drugi scenariusz z luką AIS, wersja EN raportów.
+- **P1 (mocno chcemy), w tej kolejności:** (1) moduł statków Sentinel-1: wykrycia radarowe
+  dopasowane do AIS, „ciemne” statki przy infrastrukturze, na prawdziwej scenie z weekendu;
+  (2) moduł plam Sentinel-2 (jedna dobrze przygotowana scena) i atrybucja plama → statek;
+  (3) raport LLM, licznik statystyk do pitchu. Ścieżka Kosmos: satelita musi być w demo.
+- **P2 (jeśli starczy czasu):** korekta dryfu wiatrowego (Open-Meteo), detekcje SAR z Global
+  Fishing Watch, powiązanie luki AIS z wykryciem S1, drugi scenariusz z luką AIS, wersja EN raportów.
 
 ## 4. Architektura
 
@@ -41,7 +44,7 @@ HOST 1: VM (Oracle A1 / Railway) — docker compose           HOST 2: Vercel
 ┌──────────────────────────────────────────────────┐         ┌──────────────────┐
 │ ais-worker  (ciągle)   MQTT Digitraffic ──┐      │         │ React + Vite +   │
 │ detector    (co 60 s)  scoring, alerty ───┤      │         │ MapLibre GL      │
-│ sat-worker  (co 3600s) STAC, plamy ───────┤      │         │                  │
+│ sat-worker  (co 3600s) S1 statki, S2 plamy┤      │         │                  │
 │ replay      (na żądanie) wstrzykuje pingi ┘      │  HTTPS  │ polling 5 s +    │
 │                     ▼                            │◄───────►│ SSE alertów      │
 │              SQLite (WAL) na wolumenie /data     │         │                  │
@@ -77,6 +80,8 @@ kotwica/
 │   │   ├── sat/
 │   │   │   ├── aoi.py           # obszar analizy: statyczny + dynamiczny, cięcie na kafelki
 │   │   │   ├── fetch.py         # STAC Planetary Computer, odc.stac.load z bbox
+│   │   │   ├── ships_s1.py      # S1: CFAR na VV, maska lądu i obiektów stałych
+│   │   │   ├── ais_match.py     # wykrycia S1 <-> pozycje AIS w chwili zdjęcia
 │   │   │   ├── slicks.py        # maska SCL, anomalie, segmentacja, filtry
 │   │   │   └── attribution.py   # plama -> podejrzane statki
 │   │   ├── llm/report.py        # klient OpenAI-compatible, prompt, cache
@@ -93,6 +98,7 @@ kotwica/
 │   └── tests/
 │       ├── test_rules.py
 │       ├── test_engine_scenarios.py
+│       ├── test_ais_match.py
 │       └── test_attribution.py
 ├── frontend/
 │   ├── package.json
@@ -143,8 +149,14 @@ kotwica/
 - Pasma: `B03, B04, B05, B08, B11, SCL`.
 - Filtr zachmurzenia: liczony z `SCL` WEWNĄTRZ kafelka, nie z `eo:cloud_cover` sceny.
 
+### Sentinel-1 — Microsoft Planetary Computer, P1
+- Kolekcja `sentinel-1-rtc` (zgeokodowane COG, 10 m, działa wprost z `odc.stac.load`), pasma `vv`, `vh`.
+  **Zweryfikuj dostęp bez konta.** Fallback: `sentinel-1-grd` (geometria radarowa, trzeba geokodować)
+  albo wycinek z Copernicus Data Space (konto, dane logowania w `.env`).
+- Przeloty nad Zatoką Fińską co ok. 1–2 dni (S1A + S1C), dane 1–3 h po zdjęciu.
+  **Zawczasu sprawdź plan akwizycji na 12–13.09**, żeby wiedzieć, kiedy przyjdzie scena pokrywająca się z nagranym AIS.
+
 ### Pozostałe (P2)
-- Sentinel-1: kolekcja `sentinel-1-grd` na Planetary Computer (polaryzacja VV, ciemne plamy).
 - Global Fishing Watch API: detekcje statków z SAR (token w `.env`, `GFW_TOKEN`).
 - Open-Meteo: wiatr nad morzem do korekty dryfu plamy.
 
@@ -175,6 +187,11 @@ slicks(id INTEGER PRIMARY KEY, scene_id TEXT, acquired_at INTEGER, geojson TEXT,
 
 slick_suspects(slick_id INTEGER, mmsi INTEGER, overlap REAL, angle_diff REAL,
                minutes_before INTEGER, score REAL)
+
+sar_detections(id INTEGER PRIMARY KEY, scene_id TEXT, acquired_at INTEGER, lat REAL, lon REAL,
+               x REAL, y REAL, length_m REAL, intensity_db REAL, mmsi INTEGER /*NULL = brak AIS*/,
+               match_dist_m REAL, near_asset TEXT, is_dark INTEGER)
+-- zapisuje TYLKO sat-worker
 
 reports(incident_type TEXT, incident_id INTEGER, lang TEXT, text TEXT,
         created_at INTEGER, PRIMARY KEY (incident_type, incident_id, lang))
@@ -212,6 +229,10 @@ Poziomy: `score ≥ 50` → `watch` (żółty), `score ≥ 80` → `alarm` (czer
 Cykl życia alertu: jeden alert na (mmsi, asset) na przejście. Otwierany przy przekroczeniu 50,
 aktualizowany (score = max), zamykany po 60 min poza strefą.
 
+Alerty z radaru: detektor (jedyny pisarz `alerts`) czyta nowe wiersze `sar_detections` z `is_dark = 1`
+i `near_asset IS NOT NULL` i otwiera alert kategorii `dark_vessel` z `mmsi = NULL`, regułą `sar_dark`
+i wynikiem `SAR_DARK_POINTS` (domyślnie 60 → `watch`). To dowód z opóźnieniem (czas zdjęcia), nie alert na żywo.
+
 `reasons` to lista JSON, np.:
 `[{"rule":"slow_in_zone","points":40,"detail":"SOG 5.8 kn w strefie Estlink 2, status: under way"}]`
 Frontend i LLM korzystają wprost z tego pola. To jest nasza wyjaśnialność.
@@ -245,16 +266,38 @@ Testy (`test_engine_scenarios.py`): scenariusz Eagle S musi dać alert `alarm` z
 `slow_in_zone` + `speed_drop` + `dwell`; normalny tankowiec 11 kn przecinający kabel NIE może dać alertu;
 kuter trałujący nad kablem daje najwyżej `accidental_risk`.
 
-## 10. Moduł plam ropy (P1)
+## 10. Moduł satelitarny (P1): statki z Sentinel-1, plamy z Sentinel-2
 
-### Obszar analizy (`sat/aoi.py`)
+### Obszar analizy (`sat/aoi.py`), wspólny dla S1 i S2
 - Statyczny: bufor 2 km wokół rurociągów i kabli, 10 km wokół platform.
 - Dynamiczny (tip & cue): bufor 3 km wokół trajektorii z ostatnich 12 h statków z otwartym alertem
   oraz tankowców (`ship_type` 80–89).
 - Union → siatka kafelków 10 × 10 km w EPSG:3035 → lista bbox w WGS84 z `tile_id`.
 - Nigdy jeden bbox dla całego korytarza.
 
-### Detekcja (`sat/slicks.py`), na kafelek
+### Statki S1: detekcja (`sat/ships_s1.py`), na kafelek
+1. `vv` (i `vh` pomocniczo) w skali liniowej, 10 m. Maska lądu: poligony lądu z bufora `LAND_BUFFER_M`
+   (statyczny plik `data/static/land.geojson`). Maska obiektów stałych: farmy wiatrowe i platformy
+   z bufora `FIXED_OBJECT_BUFFER_M`, bo turbiny i platformy świecą na radarze jak statki.
+2. CFAR: piksel jaśniejszy niż tło w pierścieniu wokół niego (średnia + `CFAR_K` × odchylenie,
+   okno ok. 500 m, bez strefy ochronnej wokół celu). Łączenie w obiekty (`skimage.measure.label`).
+3. Filtry rozmiaru: `SAR_MIN_PX` ≤ piksele ≤ `SAR_MAX_PX`. Długość z osi obiektu → `length_m`.
+4. Wynik: punkt (centroid) → WGS84 + EPSG:3035 → `sar_detections`.
+
+### Statki S1: dopasowanie do AIS (`sat/ais_match.py`)
+- Dla każdego statku z pingiem w `[t_img − AIS_TIME_TOL_MIN, t_img + AIS_TIME_TOL_MIN]` interpoluj pozycję na `t_img`.
+- Dopasowanie zachłanne po odległości, max `MATCH_RADIUS_M`. Promień jest duży, bo radar przesuwa
+  poruszające się statki w azymucie (Doppler), nawet o setki metrów.
+- Wykrycie bez pary → `is_dark = 1`. Jeśli leży w strefie kabla/rurociągu, `near_asset` = nazwa obiektu.
+- Statek AIS w zasięgu sceny bez wykrycia nie jest alarmem (mały statek, fala, szum), tylko statystyką.
+- Test (`test_ais_match.py`): syntetyczne wykrycia + trajektorie. Statek z AIS w pobliżu → dopasowany.
+  Wykrycie bez AIS przy kablu → `is_dark` z `near_asset`. Wykrycie na farmie wiatrowej → zamaskowane.
+- P2: wykrycie „ciemne” w miejscu, gdzie statek z luką AIS mógł być w chwili zdjęcia → podejrzany MMSI.
+
+Progi `CFAR_K`, `SAR_MIN_PX`, `SAR_MAX_PX`, `MATCH_RADIUS_M`, `AIS_TIME_TOL_MIN`, `LAND_BUFFER_M`,
+`FIXED_OBJECT_BUFFER_M`, `SAR_DARK_POINTS` w config, oznaczone `# TODO: kalibracja na scenie testowej`.
+
+### Plamy S2: detekcja (`sat/slicks.py`), na kafelek
 1. Maska: tylko `SCL == 6` (woda). Chmury i cienie (`SCL` 3, 8, 9, 10) wyrzucić i poszerzyć o 500 m.
    Jeśli woda < 30% kafelka → pomiń kafelek.
 2. Anomalia: dla B08 i B04 odchylenie od lokalnego tła (mediana + MAD w oknie ok. 1–2 km),
@@ -268,7 +311,7 @@ kuter trałujący nad kablem daje najwyżej `accidental_risk`.
 
 Wszystkie progi (`Z_THR`, `ALGAE_THR` itd.) oznacz w config jako `# TODO: kalibracja na scenie testowej`.
 
-### Atrybucja (`sat/attribution.py`)
+### Plamy S2: atrybucja (`sat/attribution.py`)
 - Oś plamy = linia środkowa dłuższego boku `minimum_rotated_rectangle`.
 - Trajektorie AIS z okna `[t_img − 6 h, t_img]`.
 - Dla każdego statku: `overlap` = długość trajektorii w buforze 300 m wokół osi / długość osi;
@@ -277,8 +320,9 @@ Wszystkie progi (`Z_THR`, `ALGAE_THR` itd.) oznacz w config jako `# TODO: kalibr
 - P2: przesunięcie plamy o dryf wiatrowy (≈ 3% prędkości wiatru × czas) przed dopasowaniem.
 
 ### Worker `satellite.py`
-Co godzinę: zbuduj AOI, dla każdego kafelka szukaj scen z ostatnich 5 dni, pomiń pary
-(scene_id, tile_id) już w `scenes`, przetwórz, zapisz. Limit pamięci kontenera 3 GB.
+Co godzinę: zbuduj AOI, dla każdego kafelka szukaj scen S1 (`sentinel-1-rtc`) i S2 (`sentinel-2-l2a`)
+z ostatnich 5 dni, pomiń pary (scene_id, tile_id) już w `scenes` (kolumna `collection` mówi, który satelita),
+przetwórz, zapisz. Najpierw S1, potem S2. Limit pamięci kontenera 3 GB.
 Tryb demo: `python -m workers.satellite --scene <ID> --bbox ...` przetwarza jedną wskazaną scenę.
 
 ## 11. API (FastAPI)
@@ -293,6 +337,7 @@ Tryb demo: `python -m workers.satellite --scene <ID> --bbox ...` przetwarza jedn
 | GET | `/alerts?status=open&since=` | lista alertów z `reasons` |
 | GET | `/alerts/stream` | SSE (`sse-starlette`): nowe i zaktualizowane alerty |
 | GET | `/slicks?since=` | plamy jako FeatureCollection + podejrzani |
+| GET | `/sar-detections?since=` | wykrycia S1 jako FeatureCollection (dopasowane / ciemne) |
 | POST | `/incidents/{type}/{id}/report?lang=pl` | raport LLM, cache w `reports` |
 | GET | `/stats` | pingi, unikalne statki, alerty, uptime (bez replay) |
 | POST | `/replay/start?scenario=eagle_s` | wymaga nagłówka `X-Admin-Token` |
@@ -315,7 +360,7 @@ CORS: domena z Vercel (`FRONTEND_ORIGIN` w `.env`), plus domeny preview, jeśli 
 - React + Vite + TypeScript, MapLibre GL JS. Basemap bez klucza (np. OpenFreeMap; fallback CARTO).
 - `VITE_API_URL` w env Vercela.
 - Warstwy z przełącznikami: kable, rurociągi, strefy (półprzezroczyste), statki (szare / żółte / czerwone
-  wg `level`), plamy (poligony), trajektoria wybranego statku.
+  wg `level`), wykrycia radarowe S1 (dopasowane do AIS / ciemne), plamy (poligony), trajektoria wybranego statku.
 - Panel alertów po prawej: lista od najwyższego wyniku, kliknięcie → centrowanie mapy i szuflada statku.
 - Szuflada statku: metadane, rozbicie wyniku reguła po regule (z `reasons`), trajektoria 6 h,
   przycisk „Generuj raport”.
@@ -363,7 +408,9 @@ REPLAY_SPEED=60
   deploy na VM. **Zbieranie danych ma ruszyć jak najwcześniej.**
 - **M1 (sob do 12:00):** `geo.py`, detektor + reguły + testy, worker `detector`, API bez raportów.
 - **M2 (sob do 18:00):** frontend (mapa, alerty, szuflada), scenariusz Eagle S + replay, SSE, deploy frontu.
-- **M3 (sob do ~02:00):** moduł plam na jednej scenie, atrybucja, raport LLM, `/stats`.
+- **M3 (sob do ~02:00):** najpierw moduł statków S1 na prawdziwej scenie z weekendu (dopasowanie do
+  nagranego AIS, alerty `dark_vessel`), potem plamy S2 na jednej scenie + atrybucja, raport LLM, `/stats`.
+  Jeśli czasu brak, S1 ma pierwszeństwo przed S2.
 - **M4 (nd do 10:00):** poprawki, nagranie wideo z demo jako backup.
 
 Nie zaczynaj kolejnego kamienia, dopóki poprzedni nie działa end-to-end na serwerze.
@@ -383,6 +430,8 @@ Nie zaczynaj kolejnego kamienia, dopóki poprzedni nie działa end-to-end na ser
 - System wskazuje przesłanki i priorytety, nie dowodzi winy.
 - Pokrycie AIS zależy od sieci odbiorników; luka nie zawsze oznacza wyłączenie transpondera
   (dlatego reguła `ais_gap` wymaga potwierdzenia pokrycia).
+- Sentinel-1 widzi w nocy i przez chmury, ale to migawka co 1–2 dni, nie monitoring ciągły. Małe łodzie
+  (poniżej ok. 15–20 m) i statki przy silnej fali mogą nie być widoczne. Wykrycie „ciemne” to przesłanka, nie dowód.
 - Sentinel-2 działa tylko w dzień i przy małym zachmurzeniu; przeloty co kilka dni.
 - Plamy dryfują; atrybucja bez korekty wiatru jest przybliżeniem.
 - Progi detekcji plam wymagają kalibracji na prawdziwych scenach.
