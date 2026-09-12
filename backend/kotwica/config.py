@@ -36,16 +36,55 @@ class Settings(BaseSettings):
     PORT_STATIONARY_MIN: int = 30
     CLEAN_GRACE_H: int = 24         # okno na atrybucję satelitarną i analizę wsteczną
 
-    # --- detektor (sekcja 8) ---
+    # --- detektor: strefy i reguły bazowe (sekcja 8.1) ---
     ZONE_BUFFER_M: float = 2000
     SLOW_MIN: float = 1.0
     SLOW_MAX: float = 7.0
     SPEED_WINDOW_H: float = 2
     SPEED_DROP_RATIO: float = 1.5
+    # Sam stosunek prędkości nie wystarcza: „zwolnił z 0,2 do 0,1 kn" to szum pomiarowy stojącego
+    # statku, a tak wyglądała połowa fałszywych alarmów w pierwszym pomiarze na prawdziwych danych.
+    SPEED_DROP_MIN_KN: float = 5.0
     DWELL_MIN: int = 30
     GAP_MIN: int = 30
+    REPEAT_CROSSING_H: float = 3
+    GAP_COVERAGE_RADIUS_M: float = 20_000
+    GAP_COVERAGE_MIN_VESSELS: int = 3
     LEVEL_WATCH: int = 50
     LEVEL_ALARM: int = 80
+    ALERT_CLOSE_MIN: int = 60          # po tylu minutach poza strefą alert się zamyka
+
+    # punkty reguł (tabela z sekcji 8.1 i 8.2)
+    PTS_SLOW_IN_ZONE: int = 40
+    PTS_SPEED_DROP: int = 25
+    PTS_DWELL: int = 20
+    PTS_REPEAT_CROSSING: int = 15
+    PTS_AIS_GAP: int = 30
+    PTS_TANKER_BONUS: int = 10
+    PTS_DRAG_SIGNATURE: int = 35
+
+    # --- sygnatura wleczenia (sekcja 8.2) ---  # TODO: kalibracja na prawdziwych danych
+    FLEET_RADIUS_M: float = 25_000
+    FLEET_BUCKET_MIN: int = 15
+    FLEET_MIN_N: int = 5
+    Z_SIG: float = 3.0
+    SIG_WINDOW_MIN: int = 40
+    SIG_PERSIST_MIN: float = 0.5
+    STRAIGHT_MIN: float = 0.9
+    # Poniżej tej prędkości COG z GNSS jest przypadkowy, więc rozjazd dziób/kurs nic nie znaczy.
+    # Dotyczy tak samo kandydata, jak i floty odniesienia.
+    SIG_SOG_MIN: float = 2.0
+    # Dolne ograniczenie skali przy liczeniu z. Bez tego flota o zerowym rozrzucie (albo trzy
+    # statki podające identyczny kurs) robi z 1° różnicy wynik rzędu setek.
+    SIG_MIN_SCALE_DEG: float = 2.0
+
+    # --- kategorie (sekcja 8.3) ---
+    WHITELIST_SHIP_TYPES: tuple[int, ...] = (31, 32, 33, 50, 51, 52, 53, 54, 55)
+    FISHING_SHIP_TYPE: int = 30
+    FISHING_NAV_STAT: int = 7
+    FISHING_SCORE_FACTOR: float = 0.5
+    TANKER_TYPES: tuple[int, int] = (80, 89)
+    ANCHORED_NAV_STATS: tuple[int, ...] = (1, 5)
 
 
 settings = Settings()

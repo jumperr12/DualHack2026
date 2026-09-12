@@ -24,7 +24,7 @@ from kotwica.log import setup_logging
 
 log = logging.getLogger("load_static")
 
-LAYERS = ("cables", "pipelines", "windfarms", "exclusions")
+LAYERS = ("cables", "pipelines", "windfarms", "platforms", "exclusions")
 SIMPLIFY_M = 50
 # Wyłączenia z OSM bywają punktami (port jako węzeł) albo liniami (nabrzeże). Detektor potrzebuje
 # poligonów, więc buforujemy je w metrach. Poligony zostają bez zmian.
@@ -41,6 +41,8 @@ def layer_from_filename(path: Path) -> str | None:
         return "pipelines"
     if "wind" in n or "farm" in n:
         return "windfarms"
+    if "platform" in n or "rig" in n:
+        return "platforms"
     if any(k in n for k in ("exclu", "anchor", "port", "harbour", "kotwicowisk")):
         return "exclusions"
     return None

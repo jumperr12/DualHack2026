@@ -1,16 +1,19 @@
 """API: odczyt z bazy. Wyjątki (forensyka, pakiet dowodowy) dojdą w M2/M3 z limitami z config."""
 
+import asyncio
 import json
 import time
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sse_starlette.sse import EventSourceResponse
 
 from kotwica import db
 from kotwica.config import settings
+from kotwica.detector.signature import angular_diff, median
 
 # worker -> klucz w `meta` z czasem ostatniego zapisu
 WORKER_KEYS = {"ais-worker": "ais_last_write", "detector": "detector_last_run"}
@@ -129,6 +132,94 @@ def track(mmsi: int, hours: float = 6):
         "properties": {"mmsi": mmsi, "n": len(rows),
                        "pings": [{k: r[k] for k in r.keys() if k not in ("lat", "lon")} for r in rows]},
     }
+
+
+def _alert_row(r) -> dict:
+    d = {k: r[k] for k in r.keys()}
+    d["reasons"] = json.loads(r["reasons"] or "[]")
+    return d
+
+
+@app.get("/alerts")
+def alerts(status: str | None = "open", since: int | None = None, limit: int = 200):
+    sql = "SELECT * FROM alerts WHERE 1 = 1"
+    args: list = []
+    if status:
+        sql += " AND status = ?"
+        args.append(status)
+    if since:
+        sql += " AND ts_last > ?"
+        args.append(since)
+    sql += " ORDER BY score DESC, ts_last DESC LIMIT ?"
+    args.append(limit)
+    conn = _conn()
+    try:
+        return [_alert_row(r) for r in conn.execute(sql, args)]
+    finally:
+        conn.close()
+
+
+@app.get("/alerts/stream")
+async def alerts_stream(request: Request):
+    """SSE: nowe i zaktualizowane alerty. Odpytujemy bazę, bo workery piszą do niej niezależnie."""
+    async def gen():
+        last_seen = int(time.time())
+        while True:
+            if await request.is_disconnected():
+                break
+            conn = _conn()
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM alerts WHERE ts_last > ? ORDER BY ts_last", (last_seen,)
+                ).fetchall()
+            finally:
+                conn.close()
+            for r in rows:
+                last_seen = max(last_seen, r["ts_last"])
+                yield {"event": "alert", "data": json.dumps(_alert_row(r), ensure_ascii=False)}
+            await asyncio.sleep(5)
+    return EventSourceResponse(gen())
+
+
+@app.get("/vessels/{mmsi}/signature")
+def signature(mmsi: int, ts: int | None = None, window: int = 3600):
+    """Szereg do wykresu w szufladzie statku: SOG, rozjazd dziób/kurs i mediana floty w tle."""
+    conn = _conn()
+    try:
+        end = ts or conn.execute("SELECT max(ts) FROM positions WHERE mmsi = ?",
+                                 (mmsi,)).fetchone()[0]
+        if end is None:
+            raise HTTPException(404, "unknown mmsi")
+        start = end - window
+        rows = conn.execute(
+            "SELECT ts, x, y, sog, cog, heading FROM positions "
+            "WHERE mmsi = ? AND ts BETWEEN ? AND ? ORDER BY ts", (mmsi, start, end)).fetchall()
+        # mediana floty liczona z pozycji innych statków w tym samym oknie i promieniu
+        others = conn.execute(
+            "SELECT ts, x, y, sog, cog, heading FROM positions "
+            "WHERE mmsi != ? AND ts BETWEEN ? AND ? AND sog > ? AND heading IS NOT NULL "
+            "AND cog IS NOT NULL", (mmsi, start, end, settings.SIG_SOG_MIN)).fetchall()
+    finally:
+        conn.close()
+
+    radius2 = settings.FLEET_RADIUS_M ** 2
+    bucket = settings.FLEET_BUCKET_MIN * 60
+    series, with_hdg = [], 0
+    for r in rows:
+        delta = None
+        if r["heading"] is not None and r["cog"] is not None and (r["sog"] or 0) >= settings.SIG_SOG_MIN:
+            delta = angular_diff(r["heading"], r["cog"])
+        if r["heading"] is not None:
+            with_hdg += 1
+        near = [angular_diff(o["heading"], o["cog"]) for o in others
+                if abs(o["ts"] - r["ts"]) <= bucket
+                and (o["x"] - r["x"]) ** 2 + (o["y"] - r["y"]) ** 2 <= radius2]
+        series.append({"ts": r["ts"], "sog": r["sog"], "delta": delta,
+                       "fleet_median": round(median(near), 1) if len(near) >= settings.FLEET_MIN_N else None,
+                       "fleet_n": len(near)})
+    return {"mmsi": mmsi, "window": window,
+            "hdg_coverage": round(with_hdg / len(rows), 3) if rows else 0.0,
+            "series": series}
 
 
 # Po `vite build` frontend leży w frontend/dist i API serwuje go pod / (bez CORS, bez drugiego serwera).

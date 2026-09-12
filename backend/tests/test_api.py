@@ -66,3 +66,29 @@ def test_track(client):
     assert t["geometry"]["coordinates"] == [[25.0, 60.0], [25.1, 60.0]]
     assert t["properties"]["n"] == 2
     assert client.get("/vessels/42/track").status_code == 404
+
+
+def test_alerts_endpoint(client, tmp_path):
+    from kotwica import db
+    from kotwica.config import settings
+    c = db.connect(settings.DB_PATH)
+    c.execute("INSERT INTO alerts(mmsi, asset, category, level, score, reasons, ts_start, ts_last, "
+              "status, is_replay) VALUES (1, 'Estlink 2', 'suspicious', 'alarm', 95, ?, 10, 20, 'open', 0)",
+              ('[{"rule":"slow_in_zone","points":40,"detail":"SOG 5.8 kn"}]',))
+    c.execute("INSERT INTO alerts(mmsi, asset, category, level, score, reasons, ts_start, ts_last, "
+              "status, is_replay) VALUES (2, 'C-Lion 1', 'suspicious', 'watch', 55, '[]', 5, 8, 'closed', 0)")
+    c.commit()
+
+    open_alerts = client.get("/alerts").json()
+    assert [a["mmsi"] for a in open_alerts] == [1]
+    assert open_alerts[0]["reasons"][0]["rule"] == "slow_in_zone"      # JSON, nie tekst
+    assert [a["mmsi"] for a in client.get("/alerts?status=closed").json()] == [2]
+    assert client.get("/alerts?status=open&since=100").json() == []
+
+
+def test_signature_endpoint(client):
+    body = client.get("/vessels/1/signature?window=3600").json()
+    assert body["mmsi"] == 1 and len(body["series"]) == 2
+    assert body["series"][0]["delta"] == 0.0        # cog 90, heading 90 w danych testowych
+    assert body["hdg_coverage"] == 1.0
+    assert client.get("/vessels/424242/signature").status_code == 404
