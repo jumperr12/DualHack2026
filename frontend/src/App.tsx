@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, getAlerts, getHealth, Health, subscribeAlerts, VesselProps } from "./api";
+import { Alert, getAlerts, getHealth, Health, subscribeAlerts, VesselProps, WHITELISTED } from "./api";
 import AlertList from "./components/AlertList";
 import MapView from "./components/MapView";
 
@@ -14,6 +14,7 @@ export default function App() {
   const [selected, setSelected] = useState<VesselProps | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [focus, setFocus] = useState<number | null>(null);
+  const [showFiltered, setShowFiltered] = useState(false);
 
   useEffect(() => {
     const tick = () => getHealth().then(setHealth).catch(() => setHealth(null));
@@ -33,14 +34,16 @@ export default function App() {
   }, []);
 
   const ais = health?.workers["ais-worker"];
+  const main = alerts.filter((a) => a.category !== WHITELISTED);
+  const filtered = alerts.filter((a) => a.category === WHITELISTED);
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">KOTWICA</span>
         <span className="stat">vessels in view <b>{count}</b></span>
-        <span className="stat">open alerts <b>{alerts.length}</b>
-          {alerts.some((a) => a.level === "alarm") &&
-            <b className="bad"> ({alerts.filter((a) => a.level === "alarm").length} alarm)</b>}
+        <span className="stat">open alerts <b>{main.length}</b>
+          {main.some((a) => a.level === "alarm") &&
+            <b className="bad"> ({main.filter((a) => a.level === "alarm").length} alarm)</b>}
         </span>
         <span className="stat">AIS feed{" "}
           {ais ? <b className={ais.ok ? "ok" : "bad"}>{ais.ok ? `live (${ais.age_s}s)` : "stale"}</b>
@@ -50,8 +53,18 @@ export default function App() {
       <MapView onSelect={setSelected} onVesselCount={setCount} focusMmsi={focus} />
       <aside className="side">
         <h2>Alerts</h2>
-        <AlertList alerts={alerts} selected={selected?.mmsi ?? null}
+        <AlertList alerts={main} selected={selected?.mmsi ?? null}
                    onSelect={(a) => setFocus(a.mmsi)} />
+        {filtered.length > 0 && (
+          <>
+            <button className="filtered-toggle" onClick={() => setShowFiltered(!showFiltered)}>
+              {showFiltered ? "▾" : "▸"} Service vessels: {filtered.length}
+              <span className="hint"> tugs, pilots, SAR — self-declared type</span>
+            </button>
+            {showFiltered && <AlertList alerts={filtered} selected={selected?.mmsi ?? null}
+                                        onSelect={(a) => setFocus(a.mmsi)} />}
+          </>
+        )}
         <h2>Vessel</h2>
         {selected ? (
           <dl>

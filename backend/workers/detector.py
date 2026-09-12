@@ -134,16 +134,19 @@ class DetectorWorker:
         for mmsi, ping in touched.items():
             state = self.detector.states.get(mmsi)
             open_for = [a for (m, _), a in self.detector.open_alerts.items() if m == mmsi]
-            score = max((a.score for a in open_for), default=0)
-            level = self.detector.level(score) if open_for else None
+            top = max(open_for, key=lambda a: a.score, default=None)
+            score = top.score if top else 0
+            level = self.detector.level(score) if top else None
             rows.append((mmsi, ping.ts, ping.lat, ping.lon, ping.sog, ping.cog, score, level,
-                         state.zone if state else None, ping.is_replay))
+                         state.zone if state else None, top.category if top else None,
+                         ping.is_replay))
         self.conn.executemany(
             "INSERT INTO vessel_state(mmsi, last_ts, lat, lon, sog, cog, score, level, zone, "
-            "is_replay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(mmsi) DO UPDATE SET "
+            "category, is_replay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(mmsi) DO UPDATE SET "
             "last_ts=excluded.last_ts, lat=excluded.lat, lon=excluded.lon, sog=excluded.sog, "
             "cog=excluded.cog, score=excluded.score, level=excluded.level, zone=excluded.zone, "
-            "is_replay=excluded.is_replay", rows)
+            "category=excluded.category, is_replay=excluded.is_replay", rows)
 
     def refresh_ship_types(self) -> None:
         self.detector.ship_types = self._ship_types()

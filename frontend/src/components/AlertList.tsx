@@ -1,4 +1,4 @@
-import { Alert } from "../api";
+import { Alert, WHITELISTED } from "../api";
 
 const AGO = (ts: number) => {
   const m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
@@ -23,6 +23,7 @@ export default function AlertList({ alerts, selected, onSelect }: Props) {
           <div className="sub">
             MMSI {a.mmsi}
             {a.category === "accidental_risk" && <em> · accidental risk</em>}
+            {a.category === WHITELISTED && <em> · service vessel</em>}
             {a.is_replay === 1 && <em> · replay</em>}
           </div>
           <ul className="reasons">

@@ -89,7 +89,7 @@ def vessels(bbox: str | None = Query(None), replay: bool = True):
         now_db = conn.execute("SELECT max(ts) FROM positions").fetchone()[0] or 0
         sql = """
             SELECT p.mmsi, p.ts, p.lat, p.lon, p.sog, p.cog, p.heading, p.nav_stat, p.is_replay,
-                   v.name, v.ship_type, s.score, s.level, s.zone
+                   v.name, v.ship_type, s.score, s.level, s.zone, s.category
             FROM positions p
             JOIN (SELECT mmsi, max(ts) AS mts FROM positions WHERE ts > ? GROUP BY mmsi) m
                  ON p.mmsi = m.mmsi AND p.ts = m.mts
@@ -141,12 +141,18 @@ def _alert_row(r) -> dict:
 
 
 @app.get("/alerts")
-def alerts(status: str | None = "open", since: int | None = None, limit: int = 200):
+def alerts(status: str | None = "open", since: int | None = None, limit: int = 200,
+           category: str | None = None):
+    """Zwraca też kategorię `whitelisted_activity` (holowniki, piloty, służby przy infrastrukturze).
+    Frontend pokazuje je osobno, żeby główna lista została czysta, ale nic nie znika."""
     sql = "SELECT * FROM alerts WHERE 1 = 1"
     args: list = []
     if status:
         sql += " AND status = ?"
         args.append(status)
+    if category:
+        sql += " AND category = ?"
+        args.append(category)
     if since:
         sql += " AND ts_last > ?"
         args.append(since)

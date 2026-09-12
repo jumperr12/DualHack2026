@@ -16,7 +16,8 @@ CREATE INDEX IF NOT EXISTS idx_positions_ts ON positions(ts);
 
 CREATE TABLE IF NOT EXISTS vessel_state(
     mmsi INTEGER PRIMARY KEY, last_ts INTEGER, lat REAL, lon REAL,
-    sog REAL, cog REAL, score INTEGER, level TEXT, zone TEXT, is_replay INTEGER);
+    sog REAL, cog REAL, score INTEGER, level TEXT, zone TEXT, category TEXT,
+    is_replay INTEGER);
 
 CREATE TABLE IF NOT EXISTS alerts(
     id INTEGER PRIMARY KEY, mmsi INTEGER, asset TEXT, category TEXT,
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 # do istniejącej bazy, więc dokładamy je przez ALTER TABLE.
 MIGRATIONS = [
     ("positions", "rot", "REAL"),
+    ("vessel_state", "category", "TEXT"),
 ]
 
 

@@ -123,11 +123,21 @@ def test_scores_match_the_table():
     assert best.level == ("alarm" if best.score >= S.LEVEL_ALARM else "watch")
 
 
-@pytest.mark.parametrize("ship_type,expected", [(52, False), (31, False), (70, True)])
-def test_whitelist(ship_type, expected):
+@pytest.mark.parametrize("ship_type,category", [(52, "whitelisted_activity"),
+                                                (31, "whitelisted_activity"),
+                                                (70, "suspicious")])
+def test_whitelisted_types_get_own_category_not_silence(ship_type, category):
+    """Holownik nad kablem nie znika — dostaje osobną kategorię, żeby operator go zobaczył.
+
+    Typ statku deklaruje sam statek i nikt tego nie weryfikuje, więc kasowanie takich jednostek
+    byłoby dziurą: w pomiarze na prawdziwych danych holownik miał 80 pkt nad Nord Stream 2.
+    """
     d = Detector(zones=zones(), ship_types={1: ship_type})
     updates = run(d, track(1, T0, [dict(lon0=25.5, lat0=60.0, lon1=25.3, lat1=60.0, sog=5.0)]))
-    assert bool(updates) is expected
+    assert updates, "kazda z tych jednostek powinna dac alert"
+    assert {u.category for u in updates} == {category}
+    # punkty liczone tak samo jak dla innych: kategoria nie zmienia wyniku
+    assert max(u.score for u in updates) == S.PTS_SLOW_IN_ZONE + S.PTS_DWELL
 
 
 def test_fishing_halves_the_score():

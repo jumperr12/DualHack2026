@@ -47,10 +47,13 @@ export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
       }
       map.addLayer({ id: "track", type: "line", source: "track",
         paint: { "line-color": "#ffffff", "line-width": 2, "line-opacity": 0.8 } });
-      // Statki: kolor wg level z detektora (M1); do tego czasu wszystkie szare.
+      // Statki: kolor wg poziomu alertu. Jednostki służbowe (holowniki, piloty, SAR) mają własny
+      // kolor, bo są punktowane, ale świadomie trzymane poza główną listą.
       map.addLayer({ id: "vessels", type: "circle", source: "vessels", paint: {
         "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 6],
-        "circle-color": ["match", ["get", "level"], "alarm", "#f85149", "watch", "#f5c542", "#9aa5b1"],
+        "circle-color": ["case",
+          ["==", ["get", "category"], "whitelisted_activity"], "#6fd3ff",
+          ["match", ["get", "level"], "alarm", "#f85149", "watch", "#f5c542", "#9aa5b1"]],
         "circle-stroke-color": ["case", ["==", ["get", "is_replay"], 1], "#ff00ff", "#0f1419"],
         "circle-stroke-width": 1 } });
 

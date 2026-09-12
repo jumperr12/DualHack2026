@@ -231,9 +231,16 @@ w strefie → **35 punktów**.
   Nie stroimy progów tak, żeby wyszło.
 
 ### 8.3 Kategorie i modyfikatory
-- Biała lista (pomijamy): `ship_type` 31, 32, 33 (holowanie, prace podwodne), 50–55 (służby).
+- Jednostki służbowe (`ship_type` 31, 32, 33 — holowanie i prace podwodne; 50–55 — służby):
+  kategoria `whitelisted_activity`. Punktujemy je normalnie, ale **nie trafiają do głównej listy**;
+  frontend pokazuje je pod przyciskiem „Service vessels". **Nie kasujemy ich**, bo `ship_type`
+  deklaruje sam statek i nikt tego nie weryfikuje — w pomiarze na prawdziwych danych ukrywało to
+  15 alertów, w tym holownik z wynikiem 80 nad Nord Stream 2.
 - Rybackie (`ship_type` 30 lub `nav_stat` 7): kategoria `accidental_risk`, wynik × 0.5.
 - Pozostałe: `suspicious`.
+- **Postój liczy się faktyczny, nie zadeklarowany.** `slow_in_zone`, `dwell` i `ais_gap` pomijają
+  statek tylko wtedy, gdy zgłasza `nav_stat` 1/5 **i** naprawdę stoi (`sog < SLOW_MIN`). Jednostka
+  deklarująca „na kotwicy", ale sunąca 4 kn nad kablem, to wzorzec wleczenia i musi być punktowana.
 - Poziomy: `score ≥ 50` → `watch`, `score ≥ 80` → `alarm`.
 - Cykl życia: jeden alert na (mmsi, asset) na przejście; otwierany przy 50, `score = max`,
   zamykany po 60 min poza strefą.
@@ -449,7 +456,13 @@ Jeśli o 23:00 nie ma pakietu — pokazujemy ranking i mówimy, że pakiet to na
 - System wskazuje przesłanki i priorytety, **nie dowodzi winy**.
 - Pokrycie AIS zależy od sieci odbiorników; luka nie zawsze oznacza wyłączenie transpondera
   (dlatego `ais_gap` wymaga potwierdzenia pokrycia).
-- `heading` bywa niedostępne — zawsze raportujemy `hdg_coverage`.
+- `heading` bywa niedostępne — zawsze raportujemy `hdg_coverage`. Sygnatura nie działa poniżej
+  `SIG_SOG_MIN`, bo COG z GNSS jest wtedy przypadkowy.
+- **Typ statku i status nawigacyjny deklaruje sam statek.** Nikt ich nie weryfikuje. Dlatego
+  jednostki służbowe trafiają do osobnej kategorii, a nie do kosza, a postój sprawdzamy prędkością.
+- Geometria kabli w Zatoce Fińskiej pochodzi z OpenStreetMap (EMODnet nie ma tego rejonu). To dane
+  rysowane przez społeczność: wystarczą do rankingu w promieniu kilku kilometrów, ale nie są mapą morską.
+- Digitraffic pokrywa wody fińskie i estońskie. Polskich wód nie widzimy — mówimy to wprost.
 - Rozjazd dziób/kurs występuje też przy holowaniu, trałowaniu i awarii steru.
 - Statek z wyłączonym AIS jest dla trybu do przodu niewidoczny; w trybie do tyłu cisza w rejonie
   jest przesłanką, ale nie zastępuje obserwacji.

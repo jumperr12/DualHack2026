@@ -97,7 +97,9 @@ def test_alert_closes_after_leaving_zone(detector):
     assert closed[0].ts >= max(u.ts for u in opened)
 
 
-def test_whitelisted_tug_is_ignored():
-    d = Detector(zones=zones(), ship_types={444: 52})     # 52 = holownik
+def test_whitelisted_tug_lands_in_separate_category():
+    """Holownik z tym samym torem co Eagle S: nie w głównej liście, ale zapisany i widoczny."""
+    d = Detector(zones=zones(), ship_types={999000001: 52})     # 52 = holownik
     updates = run(d, merge(eagle_s_pings(), background_fleet(T0, 8, 25.4, 60.0, 300)))
-    assert alerts_for(updates, 444) == []
+    mine = alerts_for(updates, 999000001)
+    assert mine and {u.category for u in mine} == {"whitelisted_activity"}

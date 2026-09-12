@@ -9,8 +9,12 @@ export type Health = {
 export type VesselProps = {
   mmsi: number; ts: number; sog: number | null; cog: number | null; heading: number | null;
   nav_stat: number | null; is_replay: number; name: string | null; ship_type: number | null;
-  score: number | null; level: string | null; zone: string | null;
+  score: number | null; level: string | null; zone: string | null; category: string | null;
 };
+
+/** Holowniki, piloty i służby: mają prawo pracować przy infrastrukturze, więc trzymamy je
+ *  poza główną listą — ale nie kasujemy, bo typ statku jest deklarowany przez sam statek. */
+export const WHITELISTED = "whitelisted_activity";
 
 export type VesselsFC = GeoJSON.FeatureCollection<GeoJSON.Point, VesselProps> & { ts: number };
 

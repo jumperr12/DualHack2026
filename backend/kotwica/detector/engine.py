@@ -127,9 +127,6 @@ class Detector:
         ship_type = self.ship_types.get(ping.mmsi)
 
         updates = self._close_stale(ping.ts, ping.mmsi)
-        if R.is_whitelisted(ship_type, self.s):
-            return updates                      # holowniki i służby pomijamy całkiem
-
         ctx = R.RuleCtx(sample=sample, state=state, states=self.states, zone=zone,
                         excluded=excluded, ship_type=ship_type, sig=sig, s=self.s)
         reasons: list[Reason] = []
@@ -144,8 +141,14 @@ class Detector:
             reasons.append(Reason("tanker_bonus", bonus[0], bonus[1]))
             raw += bonus[0]
 
+        # Holowniki, prace podwodne i służby mają prawo pracować wolno przy infrastrukturze, więc
+        # nie trafiają do głównej listy. Ale ich NIE kasujemy: `ship_type` deklaruje sam statek,
+        # nikt go nie weryfikuje, a pomiar pokazał holownik z wynikiem 80 nad Nord Stream 2.
+        # Operator ma je zobaczyć osobno i sam zdecydować.
         category = "suspicious"
-        if R.is_fishing(ship_type, sample.nav_stat, self.s):
+        if R.is_whitelisted(ship_type, self.s):
+            category = "whitelisted_activity"
+        elif R.is_fishing(ship_type, sample.nav_stat, self.s):
             category = "accidental_risk"
             raw = int(raw * self.s.FISHING_SCORE_FACTOR)
 
