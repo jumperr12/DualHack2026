@@ -71,6 +71,9 @@ class Detector:
     # indeks siatkowy: komórka -> MMSI. Bez niego każdy ping przeszukiwałby wszystkie statki.
     cells: dict[tuple[int, int], set[int]] = field(default_factory=lambda: defaultdict(set))
     vessel_cell: dict[int, tuple[int, int]] = field(default_factory=dict)
+    # Najwyższy surowy wynik per statek, także poniżej progu alertu. Forensyka potrzebuje
+    # punktacji każdego kandydata, a nie tylko tych, którzy przekroczyli 50.
+    best_raw: dict[int, tuple[int, list, int, str | None]] = field(default_factory=dict)
 
     def _reindex(self, mmsi: int, x: float, y: float) -> None:
         cell = (int(x // CELL_M), int(y // CELL_M))
@@ -153,6 +156,9 @@ class Detector:
             raw = int(raw * self.s.FISHING_SCORE_FACTOR)
 
         asset = zone or (prev.zone if prev else None)
+        best = self.best_raw.get(ping.mmsi)
+        if raw > 0 and (best is None or raw > best[0]):
+            self.best_raw[ping.mmsi] = (raw, reasons, ping.ts, asset)
         if raw >= self.s.LEVEL_WATCH and asset:
             updates.append(self._upsert(ping, asset, category, raw, reasons))
         return updates

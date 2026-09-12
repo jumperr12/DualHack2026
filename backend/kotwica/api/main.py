@@ -9,11 +9,13 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from kotwica import db
+from kotwica import db, forensics
 from kotwica.config import settings
 from kotwica.detector.signature import angular_diff, median
+from kotwica.geo import Zones, to_3035
 
 # worker -> klucz w `meta` z czasem ostatniego zapisu
 WORKER_KEYS = {"ais-worker": "ais_last_write", "detector": "detector_last_run"}
@@ -226,6 +228,78 @@ def signature(mmsi: int, ts: int | None = None, window: int = 3600):
     return {"mmsi": mmsi, "window": window,
             "hdg_coverage": round(with_hdg / len(rows), 3) if rows else 0.0,
             "series": series}
+
+
+@lru_cache(maxsize=1)
+def _zones() -> Zones:
+    return Zones.from_static(settings.STATIC_DIR, settings.ZONE_BUFFER_M)
+
+
+@lru_cache(maxsize=1)
+def _ensure_schema() -> bool:
+    """Tabele forensyki tworzy API, bo to jedyny pisarz `forensic_*`. Raz na proces."""
+    conn = db.connect(settings.DB_PATH)
+    try:
+        db.init_schema(conn)
+    finally:
+        conn.close()
+    return True
+
+
+class FaultRequest(BaseModel):
+    lat: float
+    lon: float
+    fault_ts: int
+    asset: str | None = None
+    radius_m: float | None = None
+    win_back_s: int | None = None
+    win_fwd_s: int | None = None
+
+
+@app.post("/forensics")
+def post_forensics(req: FaultRequest):
+    """Tryb do tyłu. Świadomy wyjątek od zasady „API tylko czyta" — z limitami z sekcji 9."""
+    _ensure_schema()
+    zones = _zones()
+    asset = req.asset
+    if not asset:                       # klik na mapie: sami wskazujemy najbliższy obiekt
+        nearest = zones.nearest_asset(*to_3035(req.lon, req.lat))
+        asset = nearest[0] if nearest else None
+    query = forensics.FaultQuery(lat=req.lat, lon=req.lon, fault_ts=req.fault_ts, asset=asset,
+                                 radius_m=req.radius_m, win_back_s=req.win_back_s,
+                                 win_fwd_s=req.win_fwd_s)
+    conn = db.connect(settings.DB_PATH)
+    try:
+        result = forensics.analyse(conn, query, zones, settings)
+        forensics.save(conn, result)
+    except forensics.ForensicLimit as exc:
+        raise HTTPException(400, str(exc))
+    finally:
+        conn.close()
+    return result.as_dict()
+
+
+@app.get("/forensics/{case_id}")
+def get_forensics(case_id: int):
+    conn = _conn()
+    try:
+        case = conn.execute("SELECT * FROM forensic_cases WHERE id = ?", (case_id,)).fetchone()
+        if case is None:
+            raise HTTPException(404, "unknown case")
+        cands = conn.execute("SELECT * FROM forensic_candidates WHERE case_id = ? ORDER BY rank",
+                             (case_id,)).fetchall()
+        names = {r["mmsi"]: (r["name"], r["ship_type"]) for r in
+                 conn.execute("SELECT mmsi, name, ship_type FROM vessels")}
+    finally:
+        conn.close()
+    out = {k: case[k] for k in case.keys()}
+    out["candidates"] = []
+    for c in cands:
+        d = {k: c[k] for k in c.keys() if k != "case_id"}
+        d["reasons"] = json.loads(c["reasons"] or "[]")
+        d["name"], d["ship_type"] = names.get(c["mmsi"], (None, None))
+        out["candidates"].append(d)
+    return out
 
 
 # Po `vite build` frontend leży w frontend/dist i API serwuje go pod / (bez CORS, bez drugiego serwera).

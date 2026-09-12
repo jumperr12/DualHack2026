@@ -40,6 +40,31 @@ export const getTrack = (mmsi: number, hours = 6) =>
   get<GeoJSON.Feature<GeoJSON.LineString>>(`/vessels/${mmsi}/track?hours=${hours}`);
 export const getAlerts = (status = "open") => get<Alert[]>(`/alerts?status=${status}`);
 
+export type Candidate = {
+  rank: number; mmsi: number; name: string | null; ship_type: number | null; score: number;
+  min_dist_m: number; tca_ts: number; crossed: boolean; sig_persistence: number;
+  hdg_coverage: number; post_event: string | null; reasons: Reason[];
+};
+
+export type ForensicCase = {
+  case_id: number; asset: string | null; fault_lat: number; fault_lon: number; fault_ts: number;
+  radius_m: number; win_back_s: number; win_fwd_s: number; n_vessels: number;
+  positions_scanned: number; runtime_ms: number; quiet_note: string | null; note: string | null;
+  candidates: Candidate[];
+};
+
+export async function postForensics(body: {
+  lat: number; lon: number; fault_ts: number; asset?: string; radius_m?: number;
+  win_back_s?: number;
+}): Promise<ForensicCase> {
+  const r = await fetch(`${API}/forensics`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail ?? `forensics: ${r.status}`);
+  return data;
+}
+
 /** SSE: nowe i zaktualizowane alerty. Zwraca funkcję zamykającą strumień. */
 export function subscribeAlerts(onAlert: (a: Alert) => void): () => void {
   const es = new EventSource(`${API}/alerts/stream`);

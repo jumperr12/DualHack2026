@@ -47,3 +47,34 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
   margin-bottom: 8px; font-family: inherit; }
 .filtered-toggle:hover { background: #1e2731; color: var(--text); }
 .filtered-toggle .hint { font-size: 11px; opacity: 0.7; }
+.fault { border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px; }
+.fault .row { margin: 6px 0; }
+.fault label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.fault input, .fault select { flex: 1; background: #0f1419; color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-family: inherit;
+  font-size: 12px; }
+.fault .pick, .fault .run { width: 100%; padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  font-family: inherit; font-size: 12px; border: 1px solid var(--border);
+  background: #0f1419; color: var(--text); }
+.fault .pick.on { background: #f85149; color: #fff; border-color: #f85149; }
+.fault .run { background: #1f6feb; border-color: #1f6feb; color: #fff; font-weight: 600; margin-top: 4px; }
+.fault .run:disabled { background: #263141; border-color: var(--border); color: var(--muted); cursor: default; }
+.fault .coords { font-size: 11px; color: var(--muted); margin: 2px 0 6px; }
+.fault .err { color: #f85149; font-size: 12px; }
+.fault .case-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px;
+  color: var(--muted); margin: 10px 0 6px; }
+.fault .quiet { font-size: 11px; color: #f5c542; margin: 4px 0; }
+.fault .disclaimer { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 8px; }
+.cands { list-style: none; margin: 0; padding: 0; counter-reset: rank; }
+.cand { border: 1px solid var(--border); border-left: 3px solid #1f6feb; border-radius: 4px;
+  padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
+.cand:hover { background: #1e2731; }
+.cand .head { display: flex; align-items: center; gap: 8px; }
+.cand .badge { font-weight: 700; font-size: 12px; padding: 1px 6px; border-radius: 3px;
+  background: #1f6feb; color: #fff; }
+.cand .asset { flex: 1; font-weight: 600; }
+.cand .when, .cand .sub { color: var(--muted); font-size: 11px; }
+.cand .sub { margin: 2px 0 4px; }
+.cand .reasons { list-style: none; margin: 0; padding: 0; font-size: 11px; color: #c8d1da; }
+.cand .reasons b { color: var(--text); }
+.cand .reasons .cov { color: var(--muted); }

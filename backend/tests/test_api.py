@@ -92,3 +92,42 @@ def test_signature_endpoint(client):
     assert body["series"][0]["delta"] == 0.0        # cog 90, heading 90 w danych testowych
     assert body["hdg_coverage"] == 1.0
     assert client.get("/vessels/424242/signature").status_code == 404
+
+
+def test_forensics_endpoint_and_case_readback(client, tmp_path, monkeypatch):
+    """POST /forensics liczy sprawę, GET /forensics/{id} ją odczytuje."""
+    import json as _json
+    from shapely.geometry import LineString, mapping
+    from kotwica.api import main
+    from kotwica.config import settings
+    from tests.scenario import merge, track
+    from tests.test_forensics import insert
+
+    cable = LineString([(24.5, 60.0), (25.6, 60.0)])
+    static = tmp_path / "static2"
+    static.mkdir()
+    (static / "cables.geojson").write_text(_json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Estlink 2"}, "geometry": mapping(cable)}]}))
+    monkeypatch.setattr(settings, "STATIC_DIR", str(static))
+    main._zones.cache_clear()
+    main._infrastructure.cache_clear()
+
+    T0 = 1_700_000_000
+    conn = db.connect(settings.DB_PATH)
+    conn.execute("INSERT OR REPLACE INTO vessels(mmsi, name, ship_type) VALUES (555, 'CULPRIT', 80)")
+    insert(conn, merge(track(555, T0, [
+        dict(lon0=26.30, lat0=60.05, lon1=25.62, lat1=60.05, sog=11.0),
+        dict(lon0=25.62, lat0=60.0, lon1=25.22, lat1=60.0, sog=6.0, hdg_offset=20.0)])))
+
+    body = client.post("/forensics", json={"lat": 60.0, "lon": 25.40,
+                                           "fault_ts": T0 + 3 * 3600}).json()
+    assert body["asset"] == "Estlink 2"          # obiekt dobrany po najbliższym, bez podania
+    assert body["candidates"][0]["mmsi"] == 555
+    assert body["candidates"][0]["rank"] == 1
+    assert body["case_id"]
+
+    again = client.get(f"/forensics/{body['case_id']}").json()
+    assert again["candidates"][0]["mmsi"] == 555
+    assert again["candidates"][0]["name"] == "CULPRIT"
+    assert isinstance(again["candidates"][0]["reasons"], list)
+    assert client.get("/forensics/9999").status_code == 404

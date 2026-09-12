@@ -123,6 +123,20 @@ class Zones:
                 out.append(self.assets[i].name)
         return out
 
+    def line_of(self, name: str):
+        """Geometria obiektu po nazwie (EPSG:3035) albo None."""
+        for a in self.assets:
+            if a.name == name:
+                return a.line
+        return None
+
+    def track_crosses(self, track, line, tolerance_m: float = 200) -> bool:
+        """Czy trasa (lista obiektów z .x/.y) przecina linię obiektu z zadaną tolerancją."""
+        if line is None or len(track) < 2:
+            return False
+        path = shapely.linestrings([[p.x, p.y] for p in track])
+        return bool(shapely.intersects(path, line.buffer(tolerance_m)))
+
     def nearest_asset(self, x: float, y: float) -> tuple[str, float] | None:
         """Najbliższy obiekt i odległość w metrach, niezależnie od bufora (dla forensyki)."""
         if not self.assets:

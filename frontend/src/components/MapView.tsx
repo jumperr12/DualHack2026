@@ -14,9 +14,15 @@ type Props = {
   onSelect: (v: VesselProps | null) => void;
   onVesselCount: (n: number) => void;
   focusMmsi?: number | null;    // klik w alert: wyśrodkuj mapę na statku i pokaż jego ślad
+  picking?: boolean;            // tryb wskazywania miejsca awarii
+  onPoint?: (p: { lat: number; lon: number }) => void;
+  fault?: { lat: number; lon: number } | null;
 };
 
-export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
+export default function MapView({ onSelect, onVesselCount, focusMmsi, picking, onPoint,
+                                  fault }: Props) {
+  const pickingRef = useRef(false);
+  pickingRef.current = !!picking;
   const div = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>(
@@ -34,6 +40,7 @@ export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
       map.addSource("infra", { type: "geojson", data: EMPTY });
       map.addSource("vessels", { type: "geojson", data: EMPTY });
       map.addSource("track", { type: "geojson", data: EMPTY });
+      map.addSource("fault", { type: "geojson", data: EMPTY });
 
       map.addLayer({ id: "exclusions", type: "fill", source: "infra",
         filter: ["==", ["get", "layer"], "exclusions"],
@@ -61,7 +68,18 @@ export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
         (map.getSource("infra") as maplibregl.GeoJSONSource).setData(await getInfrastructure());
       } catch (e) { console.warn("infrastructure", e); }
 
+      // Miejsce awarii: krzyżyk plus okrąg promienia analizy.
+      map.addLayer({ id: "fault-radius", type: "circle", source: "fault", paint: {
+        "circle-radius": ["interpolate", ["exponential", 2], ["zoom"],
+          6, ["/", 10000, 1500], 14, ["/", 10000, 6]],
+        "circle-color": "#f85149", "circle-opacity": 0.12,
+        "circle-stroke-color": "#f85149", "circle-stroke-width": 1, "circle-stroke-opacity": 0.6 } });
+      map.addLayer({ id: "fault-point", type: "circle", source: "fault", paint: {
+        "circle-radius": 7, "circle-color": "#f85149",
+        "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+
       map.on("click", "vessels", async (e) => {
+        if (pickingRef.current) return;         // w trybie wskazywania klik należy do awarii
         const p = e.features?.[0]?.properties as VesselProps | undefined;
         if (!p) return;
         onSelect(p);
@@ -70,6 +88,10 @@ export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
         } catch (err) { console.warn("track", err); }
       });
       map.on("click", (e) => {
+        if (pickingRef.current) {
+          onPoint?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+          return;
+        }
         if (!map.queryRenderedFeatures(e.point, { layers: ["vessels"] }).length) {
           onSelect(null);
           (map.getSource("track") as maplibregl.GeoJSONSource).setData(EMPTY);
@@ -100,6 +122,21 @@ export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
     tick();
     return () => { stop = true; clearInterval(id); };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const src = map.getSource("fault") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(fault
+      ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [fault.lon, fault.lat] } }
+      : EMPTY);
+  }, [fault]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) map.getCanvas().style.cursor = picking ? "crosshair" : "";
+  }, [picking]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert, getAlerts, getHealth, Health, subscribeAlerts, VesselProps, WHITELISTED } from "./api";
+import { Alert, ForensicCase, getAlerts, getHealth, Health, subscribeAlerts, VesselProps,
+         WHITELISTED } from "./api";
 import AlertList from "./components/AlertList";
+import FaultPanel from "./components/FaultPanel";
 import MapView from "./components/MapView";
 
 const NAV_STAT: Record<number, string> = {
@@ -15,6 +17,9 @@ export default function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [focus, setFocus] = useState<number | null>(null);
   const [showFiltered, setShowFiltered] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [fault, setFault] = useState<{ lat: number; lon: number } | null>(null);
+  const [forensicCase, setForensicCase] = useState<ForensicCase | null>(null);
 
   useEffect(() => {
     const tick = () => getHealth().then(setHealth).catch(() => setHealth(null));
@@ -50,8 +55,13 @@ export default function App() {
                : <b className="bad">offline</b>}
         </span>
       </header>
-      <MapView onSelect={setSelected} onVesselCount={setCount} focusMmsi={focus} />
+      <MapView onSelect={setSelected} onVesselCount={setCount} focusMmsi={focus}
+               picking={picking} fault={fault}
+               onPoint={(p) => { setFault(p); setPicking(false); }} />
       <aside className="side">
+        <FaultPanel point={fault} picking={picking} onPick={() => setPicking(!picking)}
+                    result={forensicCase} onCase={setForensicCase}
+                    onSelectCandidate={setFocus} />
         <h2>Alerts</h2>
         <AlertList alerts={main} selected={selected?.mmsi ?? null}
                    onSelect={(a) => setFocus(a.mmsi)} />

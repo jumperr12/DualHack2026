@@ -78,6 +78,15 @@ class Settings(BaseSettings):
     # statki podające identyczny kurs) robi z 1° różnicy wynik rzędu setek.
     SIG_MIN_SCALE_DEG: float = 2.0
 
+    # --- forensyka: tryb do tyłu (sekcja 9) ---
+    FORENSIC_RADIUS_M: float = 10_000
+    WIN_BACK_S: int = 6 * 3600
+    WIN_FWD_S: int = 3600
+    POST_EVENT_MIN: int = 60
+    CANDIDATE_MIN_SCORE: int = 30
+    FORENSIC_MAX_ROWS: int = 200_000
+    FORENSIC_TIMEOUT_S: float = 8
+
     # --- kategorie (sekcja 8.3) ---
     WHITELIST_SHIP_TYPES: tuple[int, ...] = (31, 32, 33, 50, 51, 52, 53, 54, 55)
     FISHING_SHIP_TYPE: int = 30

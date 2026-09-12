@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS reports(
     incident_type TEXT, incident_id INTEGER, lang TEXT, text TEXT,
     created_at INTEGER, PRIMARY KEY (incident_type, incident_id, lang));
 
+CREATE TABLE IF NOT EXISTS forensic_cases(
+    id INTEGER PRIMARY KEY, asset TEXT, fault_lat REAL, fault_lon REAL,
+    fault_ts INTEGER, radius_m INTEGER, win_back_s INTEGER, win_fwd_s INTEGER,
+    gnss_trust TEXT, gnss_reasons TEXT, n_vessels INTEGER, created_at INTEGER,
+    runtime_ms INTEGER, positions_scanned INTEGER, quiet_note TEXT);
+
+CREATE TABLE IF NOT EXISTS forensic_candidates(
+    case_id INTEGER, mmsi INTEGER, rank INTEGER, score INTEGER,
+    min_dist_m REAL, tca_ts INTEGER, crossed INTEGER,
+    sig_z_med REAL, sig_persistence REAL, hdg_coverage REAL,
+    reasons TEXT, intent_score REAL, intent_reasons TEXT);
+CREATE INDEX IF NOT EXISTS idx_candidates_case ON forensic_candidates(case_id, rank);
+
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 
