@@ -99,6 +99,27 @@ def test_ais_gap_requires_confirmed_coverage():
     assert "ais_gap" in fired(run(d2, merge(before, after, witnesses)))
 
 
+def test_our_own_outage_is_not_an_ais_gap():
+    """Awaria naszego odbioru nie może wyglądać jak wyłączone transpondery.
+
+    Zdarzyło się na żywo 12.09: worker stał 166 min, po restarcie cała flota odezwała się
+    w tej samej sekundzie i potwierdzała pokrycie sama sobie. 14 fałszywych alertów.
+    """
+    gap_s = (S.GAP_MIN + 15) * 60
+    before = leg(1, T0, 25.5, 60.0, 25.45, 60.0, sog=5.0)
+    after = leg(1, before[-1].ts + gap_s, 25.3, 60.0, 25.25, 60.0, sog=5.0)
+
+    # świadkowie milczą tak samo długo i wracają razem z nami — to nasza awaria, nie ich cisza
+    witnesses = []
+    for i in range(S.GAP_COVERAGE_MIN_VESSELS + 2):
+        w_before = leg(500 + i, T0, 25.4 + 0.01 * i, 60.05, 25.38 + 0.01 * i, 60.05, sog=8.0)
+        w_after = leg(500 + i, before[-1].ts + gap_s, 25.3 + 0.01 * i, 60.05,
+                      25.28 + 0.01 * i, 60.05, sog=8.0)
+        witnesses += w_before + w_after
+    d = Detector(zones=zones(), ship_types={1: 70})
+    assert "ais_gap" not in fired(run(d, merge(before, after, witnesses)))
+
+
 def test_tanker_bonus_only_on_top_of_other_rules():
     slow = dict(lon0=25.5, lat0=60.0, lon1=25.3, lat1=60.0, sog=5.0)
     d = Detector(zones=zones(), ship_types={1: 80})

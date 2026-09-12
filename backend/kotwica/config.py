@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     REPEAT_CROSSING_H: float = 3
     GAP_COVERAGE_RADIUS_M: float = 20_000
     GAP_COVERAGE_MIN_VESSELS: int = 3
+    # Świadkowie muszą nadawać w ŚRODKU luki, nie na jej krawędziach. Bez tego marginesu własna
+    # awaria odbioru wygląda jak wyłączone transpondery: cała flota milknie i wraca w tej samej
+    # sekundzie, więc każdy statek potwierdza pokrycie każdemu (14 fałszywych alertów 12.09).
+    GAP_EDGE_MARGIN_S: int = 300
     LEVEL_WATCH: int = 50
     LEVEL_ALARM: int = 80
     ALERT_CLOSE_MIN: int = 60          # po tylu minutach poza strefą alert się zamyka

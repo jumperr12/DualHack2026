@@ -101,11 +101,14 @@ def ais_gap(c: RuleCtx) -> tuple[int, str] | None:
     gap_s = c.sample.ts - prev.ts
     if gap_s <= c.s.GAP_MIN * 60:
         return None
+    # Świadków liczymy tylko z wnętrza luki. Ping oddalony o sekundy od jej krawędzi nie dowodzi,
+    # że odbiór działał przez całą przerwę — a przy awarii naszego ingestu cała flota wraca naraz.
+    lo, hi = prev.ts + c.s.GAP_EDGE_MARGIN_S, c.sample.ts - c.s.GAP_EDGE_MARGIN_S
     others = 0
     for mmsi, st in c.states.items():
         if mmsi == c.state.mmsi:
             continue
-        if any(prev.ts < x.ts < c.sample.ts
+        if any(lo < x.ts < hi
                and math.dist((x.x, x.y), (prev.x, prev.y)) <= c.s.GAP_COVERAGE_RADIUS_M
                for x in st.samples):
             others += 1
