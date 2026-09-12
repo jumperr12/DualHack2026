@@ -26,9 +26,16 @@ log = logging.getLogger("load_static")
 
 LAYERS = ("cables", "pipelines", "windfarms", "platforms", "exclusions")
 SIMPLIFY_M = 50
-# Wyłączenia z OSM bywają punktami (port jako węzeł) albo liniami (nabrzeże). Detektor potrzebuje
-# poligonów, więc buforujemy je w metrach. Poligony zostają bez zmian.
-EXCLUSION_BUFFER_M = {"harbour": 2000, "anchorage": 1000}
+# Bufory wyłączeń w metrach: (rodzaj, czy_już_poligon) -> ile dodać.
+# Punkt albo linia to szkic portu, więc bufor musi zrobić z niego obszar. Ale i gotowe poligony
+# trzeba poszerzyć: w OSM obrysowują basen portowy albo teren terminalu, a statek stojący przy
+# nabrzeżu wypada kilkadziesiąt metrów NA ZEWNĄTRZ. Bez tego marginesu każde cumowanie
+# nad kablem wchodzącym do portu robiło alert (22 z 37 alertów w pierwszym pomiarze).
+EXCLUSION_BUFFER_M = {
+    ("harbour", False): 2000, ("harbour", True): 500,
+    ("anchorage", False): 1000, ("anchorage", True): 500,
+}
+DEFAULT_EXCLUSION_BUFFER_M = 500
 NAME_KEYS = ("name", "cable_name", "cablename", "name_cable", "pipe_name", "pipename",
              "pipeline", "sitename", "site_name", "project", "title", "label", "nazwa")
 
@@ -128,8 +135,10 @@ def process_features(fc: dict, layer: str, bbox, kind: str | None = None) -> lis
         props = f.get("properties") or {}
         feat_kind = kind or props.get("kind")
         buffer_m = 0
-        if layer == "exclusions" and g.geom_type not in ("Polygon", "MultiPolygon"):
-            buffer_m = EXCLUSION_BUFFER_M.get(feat_kind or "harbour", EXCLUSION_BUFFER_M["harbour"])
+        if layer == "exclusions":
+            is_area = g.geom_type in ("Polygon", "MultiPolygon")
+            buffer_m = EXCLUSION_BUFFER_M.get((feat_kind or "harbour", is_area),
+                                              DEFAULT_EXCLUSION_BUFFER_M)
         g = simplify_m(g, SIMPLIFY_M, buffer_m)
         if g.is_empty:
             continue

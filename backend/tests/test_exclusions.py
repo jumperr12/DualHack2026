@@ -45,6 +45,10 @@ def test_exclusion_points_and_lines_get_buffered_polygons():
     # bufor 2 km wokół punktu: szerokość ok. 4 km, czyli ok. 0.07° długości na 60°N
     minx, miny, maxx, maxy = shape(out[0]["geometry"]).bounds
     assert 0.06 < maxx - minx < 0.09 and 0.03 < maxy - miny < 0.04
+    # gotowy poligon też dostaje margines: statek przy nabrzeżu jest tuż poza obrysem portu
+    original = shape(fc["features"][2]["geometry"])
+    widened = shape(out[2]["geometry"])
+    assert widened.contains(original) and widened.area > original.area
 
 
 def test_layer_detection_for_exclusions():
