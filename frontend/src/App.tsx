@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { getHealth, Health, VesselProps } from "./api";
+import { Alert, getAlerts, getHealth, Health, subscribeAlerts, VesselProps } from "./api";
+import AlertList from "./components/AlertList";
 import MapView from "./components/MapView";
 
 const NAV_STAT: Record<number, string> = {
@@ -11,6 +12,8 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [count, setCount] = useState(0);
   const [selected, setSelected] = useState<VesselProps | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [focus, setFocus] = useState<number | null>(null);
 
   useEffect(() => {
     const tick = () => getHealth().then(setHealth).catch(() => setHealth(null));
@@ -19,19 +22,36 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Pełna lista raz, potem tylko zmiany przez SSE.
+  useEffect(() => {
+    getAlerts().then(setAlerts).catch(() => setAlerts([]));
+    return subscribeAlerts((a) => setAlerts((prev) => {
+      const rest = prev.filter((p) => p.id !== a.id);
+      const next = a.status === "open" ? [...rest, a] : rest;
+      return next.sort((x, y) => y.score - x.score);
+    }));
+  }, []);
+
   const ais = health?.workers["ais-worker"];
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">KOTWICA</span>
         <span className="stat">vessels in view <b>{count}</b></span>
+        <span className="stat">open alerts <b>{alerts.length}</b>
+          {alerts.some((a) => a.level === "alarm") &&
+            <b className="bad"> ({alerts.filter((a) => a.level === "alarm").length} alarm)</b>}
+        </span>
         <span className="stat">AIS feed{" "}
           {ais ? <b className={ais.ok ? "ok" : "bad"}>{ais.ok ? `live (${ais.age_s}s)` : "stale"}</b>
                : <b className="bad">offline</b>}
         </span>
       </header>
-      <MapView onSelect={setSelected} onVesselCount={setCount} />
+      <MapView onSelect={setSelected} onVesselCount={setCount} focusMmsi={focus} />
       <aside className="side">
+        <h2>Alerts</h2>
+        <AlertList alerts={alerts} selected={selected?.mmsi ?? null}
+                   onSelect={(a) => setFocus(a.mmsi)} />
         <h2>Vessel</h2>
         {selected ? (
           <dl>
@@ -44,9 +64,7 @@ export default function App() {
             <dt>Last ping</dt><dd>{new Date(selected.ts * 1000).toISOString().slice(11, 19)} UTC</dd>
             <dt>Score</dt><dd>{selected.score ?? "—"} {selected.level ?? ""}</dd>
           </dl>
-        ) : <p className="empty">Click a vessel on the map.</p>}
-        <h2>Alerts</h2>
-        <p className="empty">Detector not running yet (M1).</p>
+        ) : <p className="empty">Click a vessel on the map or an alert above.</p>}
       </aside>
     </div>
   );

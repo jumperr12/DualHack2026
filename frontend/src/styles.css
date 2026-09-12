@@ -26,3 +26,19 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
 .side .empty { color: var(--muted); }
 .side dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
 .side dt { color: var(--muted); } .side dd { margin: 0; }
+.alerts { list-style: none; margin: 0 0 16px; padding: 0; }
+.alert { border: 1px solid var(--border); border-left-width: 3px; border-radius: 4px;
+  padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
+.alert:hover { background: #1e2731; }
+.alert.watch { border-left-color: #f5c542; } .alert.alarm { border-left-color: #f85149; }
+.alert.sel { background: #1e2731; }
+.alert .head { display: flex; align-items: center; gap: 8px; }
+.alert .badge { font-weight: 700; font-size: 12px; padding: 1px 6px; border-radius: 3px;
+  background: #f5c542; color: #0f1419; }
+.alert .badge.alarm { background: #f85149; color: #fff; }
+.alert .asset { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert .when { color: var(--muted); font-size: 11px; }
+.alert .sub { color: var(--muted); font-size: 11px; margin: 2px 0 4px; }
+.alert .reasons { list-style: none; margin: 0; padding: 0; font-size: 11px; color: #c8d1da; }
+.alert .reasons li { margin: 1px 0; }
+.alert .reasons b { color: var(--text); }

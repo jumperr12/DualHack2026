@@ -14,6 +14,14 @@ export type VesselProps = {
 
 export type VesselsFC = GeoJSON.FeatureCollection<GeoJSON.Point, VesselProps> & { ts: number };
 
+export type Reason = { rule: string; points: number; detail: string };
+
+export type Alert = {
+  id: number; mmsi: number; asset: string; category: string; level: "watch" | "alarm";
+  score: number; reasons: Reason[]; ts_start: number; ts_last: number; status: string;
+  is_replay: number;
+};
+
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`${API}${path}`);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
@@ -26,3 +34,12 @@ export const getVessels = (bbox?: string) =>
   get<VesselsFC>(`/vessels${bbox ? `?bbox=${bbox}` : ""}`);
 export const getTrack = (mmsi: number, hours = 6) =>
   get<GeoJSON.Feature<GeoJSON.LineString>>(`/vessels/${mmsi}/track?hours=${hours}`);
+export const getAlerts = (status = "open") => get<Alert[]>(`/alerts?status=${status}`);
+
+/** SSE: nowe i zaktualizowane alerty. Zwraca funkcję zamykającą strumień. */
+export function subscribeAlerts(onAlert: (a: Alert) => void): () => void {
+  const es = new EventSource(`${API}/alerts/stream`);
+  es.addEventListener("alert", (e) => onAlert(JSON.parse((e as MessageEvent).data)));
+  es.onerror = () => console.warn("alert stream reconnecting");
+  return () => es.close();
+}

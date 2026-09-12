@@ -10,9 +10,13 @@ const STATIC_LAYERS: Record<string, string> = {
   cables: "#f5c542", pipelines: "#ff8c42", windfarms: "#6fd3ff", exclusions: "#9aa5b1",
 };
 
-type Props = { onSelect: (v: VesselProps | null) => void; onVesselCount: (n: number) => void };
+type Props = {
+  onSelect: (v: VesselProps | null) => void;
+  onVesselCount: (n: number) => void;
+  focusMmsi?: number | null;    // klik w alert: wyśrodkuj mapę na statku i pokaż jego ślad
+};
 
-export default function MapView({ onSelect, onVesselCount }: Props) {
+export default function MapView({ onSelect, onVesselCount, focusMmsi }: Props) {
   const div = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>(
@@ -93,6 +97,24 @@ export default function MapView({ onSelect, onVesselCount }: Props) {
     tick();
     return () => { stop = true; clearInterval(id); };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focusMmsi) return;
+    (async () => {
+      try {
+        const t = await getTrack(focusMmsi);
+        (map.getSource("track") as maplibregl.GeoJSONSource)?.setData(t);
+        const coords = t.geometry.coordinates;
+        if (coords.length) {
+          map.flyTo({ center: coords[coords.length - 1] as [number, number], zoom: 10 });
+          const fc = await getVessels();
+          const f = fc.features.find((v) => v.properties.mmsi === focusMmsi);
+          if (f) onSelect(f.properties);
+        }
+      } catch (e) { console.warn("focus", e); }
+    })();
+  }, [focusMmsi]);
 
   useEffect(() => {
     const map = mapRef.current;

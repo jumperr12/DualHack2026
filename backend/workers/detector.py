@@ -166,13 +166,16 @@ def main() -> None:
     log.info("detector loop started")
     ticks = 0
     while not stop:
+        processed = 0
         try:
-            worker.cycle()
+            processed = worker.cycle()
             ticks += 1
             if ticks % 10 == 0:            # metadane statków dochodzą z opóźnieniem
                 worker.refresh_ship_types()
         except Exception:
             log.exception("cycle failed, retrying next tick")
+        if processed >= BATCH:
+            continue                       # nadrabianie zaległości: bez przerwy
         for _ in range(60):                # przerwa 60 s, ale reagujemy na sygnał
             if stop:
                 break
